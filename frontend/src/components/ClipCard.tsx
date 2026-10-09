@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { api, type Clip, type Job } from "../api/client";
+import { api, type Clip, type ExportSettings, type Job } from "../api/client";
 import { formatDuration } from "../lib/format";
 import { runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
@@ -8,9 +8,10 @@ import { ClipPlayer } from "./ClipPlayer";
 interface Props {
   clip: Clip;
   proxyUrl: string;
+  settings?: ExportSettings;
 }
 
-export function ClipCard({ clip, proxyUrl }: Props) {
+export function ClipCard({ clip, proxyUrl, settings }: Props) {
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = !!job && job.status !== "succeeded" && job.status !== "failed";
@@ -18,7 +19,7 @@ export function ClipCard({ clip, proxyUrl }: Props) {
   async function download() {
     setError(null);
     try {
-      await runAndDownload(() => api.exportClip(clip.id), setJob);
+      await runAndDownload(() => api.exportClip(clip.id, settings), setJob);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed.");
     } finally {

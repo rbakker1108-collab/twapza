@@ -35,6 +35,8 @@ export interface Clip {
 
 export interface ExportSettings {
   aspect: "original";
+  /** Upscale clips whose shorter side is below 1080 px (never downscales). */
+  upscale_1080: boolean;
 }
 
 export interface Project {

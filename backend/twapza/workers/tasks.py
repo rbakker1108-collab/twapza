@@ -101,9 +101,12 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
             on_progress(1.0)
         return key
     app = get_settings()
+    video_filter = None
+    if settings.upscale_1080:
+        video_filter = ffmpeg.upscale_filter(project.width or 0, project.height or 0)
     with storage.read_path(project.original_key) as src, storage.write_path(key) as dst:
         ffmpeg.cut_clip(src, dst, clip.start, clip.end, preset=app.export_preset,
-                        crf=app.export_crf, on_progress=on_progress)
+                        crf=app.export_crf, video_filter=video_filter, on_progress=on_progress)
     return key
 
 

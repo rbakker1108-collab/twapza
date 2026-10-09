@@ -130,19 +130,39 @@ def make_proxy(src: Path, dst: Path, *, max_height: int = 720, has_audio: bool =
     run_ffmpeg(args, duration=duration, on_progress=on_progress)
 
 
+def upscale_filter(width: int, height: int, min_short_side: int = 1080) -> str | None:
+    """ffmpeg filter that upscales so the shorter side is ``min_short_side`` px.
+
+    Returns ``None`` when the video is already at least that size (never downscales).
+    The output size is computed by ffmpeg from the decoded frames, so videos with a
+    rotation flag (common on phones) keep the right orientation. Lanczos scaling
+    plus a light sharpen; this makes low-res footage look cleaner on platforms that
+    expect 1080p, but it cannot add detail that isn't in the source.
+    """
+    if not width or not height or min(width, height) >= min_short_side:
+        return None
+    m = min_short_side
+    w = f"if(lt(iw,ih),{m},-2)"
+    h = f"if(lt(iw,ih),-2,{m})"
+    return f"scale='{w}':'{h}':flags=lanczos,setsar=1,unsharp=5:5:0.5:5:5:0"
+
+
 def cut_clip(src: Path, dst: Path, start: float, end: float, *, preset: str = "veryfast",
-             crf: int = 20, on_progress: ProgressCallback | None = None) -> None:
+             crf: int = 20, video_filter: str | None = None,
+             on_progress: ProgressCallback | None = None) -> None:
     """Re-encode ``[start, end)`` of ``src`` into a new H.264/AAC mp4.
 
     Always re-encodes (never stream-copies) so the cut is frame-accurate rather
-    than snapping to the nearest keyframe.
+    than snapping to the nearest keyframe. ``video_filter`` is an optional ffmpeg
+    filter chain (e.g. from ``upscale_filter``).
     """
     if end <= start:
         raise MediaError("Clip end must be after its start.")
     duration = end - start
+    vf = ["-vf", video_filter] if video_filter else []
     run_ffmpeg(
         ["-ss", f"{start:.3f}", "-i", str(src), "-t", f"{duration:.3f}",
-         "-map", "0:v:0", "-map", "0:a:0?",
+         "-map", "0:v:0", "-map", "0:a:0?", *vf,
          "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "160k",
          "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", "-f", "mp4", str(dst)],

@@ -77,6 +77,22 @@ def test_simple_clips_end_to_end(client, ready_project, fake_transcriber):
     assert len(names) == 2 and names[0].startswith("My_Talk_simple01_")
 
 
+def test_exports_upscale_small_videos_to_1080p_unless_disabled(client, ready_project, tmp_path):
+    from twapza.media import ffmpeg as media
+
+    clip = generate(client, ready_project["id"], 15)[0]
+    sizes = {}
+    for upscale in (True, False):
+        job = client.post(f"/api/clips/{clip['id']}/export",
+                          json={"settings": {"upscale_1080": upscale}}).json()
+        assert job["status"] == "succeeded", job
+        out = tmp_path / f"export-{upscale}.mp4"
+        out.write_bytes(client.get(job["download_url"]).content)
+        info = media.probe(out)
+        sizes[upscale] = (info.width, info.height)
+    assert sizes == {True: (1440, 1080), False: (320, 240)}  # source is 320x240
+
+
 def test_regenerating_replaces_previous_clips(client, ready_project):
     pid = ready_project["id"]
     first = generate(client, pid, 15)

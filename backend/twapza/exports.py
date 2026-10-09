@@ -17,6 +17,8 @@ from twapza.db.models import Clip, Project
 class ExportSettings(BaseModel):
     # Stage 4 adds "9:16" and caption options.
     aspect: Literal["original"] = "original"
+    # Upscale clips whose shorter side is below 1080 px to 1080p (never downscales).
+    upscale_1080: bool = True
 
 
 def export_key(clip: Clip, settings: ExportSettings) -> str:

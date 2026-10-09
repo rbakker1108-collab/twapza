@@ -51,7 +51,9 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `workers.tasks.ensure_transcript`. Videos without audio get an empty transcript.
 - **Exports are deterministic and cached**: the key is a hash of the clip's start/end
   plus `ExportSettings` (`exports.py`), so re-exporting an unchanged clip is instant and
-  a trimmed clip renders a new file. Jobs that produce a file store `result_key` /
+  a trimmed clip renders a new file. `ExportSettings.upscale_1080` (default on) upscales
+  sources whose short side is < 1080 px via `ffmpeg.upscale_filter` (lanczos + light
+  sharpen; output size computed by ffmpeg so rotated phone videos stay correct). Jobs that produce a file store `result_key` /
   `result_name`; the browser downloads via `GET /api/jobs/{id}/download`.
 - **Schema changes**: bump `SCHEMA_VERSION` in `db/session.py`. On mismatch the DB and
   stored project files are reset (all data is temporary). Use Alembic once data must survive.

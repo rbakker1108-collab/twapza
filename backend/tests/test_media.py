@@ -1,3 +1,5 @@
+import subprocess
+
 import pytest
 
 from tests.conftest import make_test_video, requires_ffmpeg
@@ -84,3 +86,44 @@ def test_extract_frame(sample_video, tmp_path):
     out = tmp_path / "thumb.jpg"
     ffmpeg.extract_frame(sample_video, out, 1.0, height=120)
     assert out.read_bytes()[:2] == b"\xff\xd8"  # JPEG magic
+
+
+@pytest.mark.parametrize("w,h", [(1920, 1080), (1080, 1920), (3840, 2160), (1080, 1080), (0, 0)])
+def test_upscale_filter_skips_videos_already_1080p_or_larger(w, h):
+    assert ffmpeg.upscale_filter(w, h) is None
+
+
+def test_upscale_filter_for_small_videos():
+    vf = ffmpeg.upscale_filter(1280, 720)
+    assert vf is not None and "lanczos" in vf and "1080" in vf
+
+
+@pytest.mark.parametrize("size,expected", [
+    ("320x240", (1440, 1080)),   # 4:3 landscape
+    ("640x360", (1920, 1080)),   # 16:9 landscape
+    ("360x640", (1080, 1920)),   # 9:16 portrait (phone)
+    ("300x300", (1080, 1080)),   # square
+    ("854x480", (1922, 1080)),   # not exactly 16:9: proportional, kept even
+])
+def test_cut_clip_upscales_to_1080p(tmp_path, size, expected):
+    w, h = map(int, size.split("x"))
+    src = make_test_video(tmp_path / "small.mp4", seconds=2, size=size)
+    out = tmp_path / "up.mp4"
+    ffmpeg.cut_clip(src, out, 0, 1, preset="ultrafast", video_filter=ffmpeg.upscale_filter(w, h))
+    info = ffmpeg.probe(out)
+    assert (info.width, info.height) == expected
+    assert info.width % 2 == 0 and info.height % 2 == 0
+
+
+def test_upscale_respects_rotation_flag(tmp_path):
+    """Phone video stored as 640x360 with a 90° rotation flag displays as 360x640."""
+    src = make_test_video(tmp_path / "landscape.mp4", seconds=2, size="640x360")
+    rotated = tmp_path / "rotated.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-display_rotation", "90", "-i", str(src),
+                    "-c", "copy", str(rotated)], check=True)
+    info = ffmpeg.probe(rotated)  # reports stored (unrotated) size
+    out = tmp_path / "up.mp4"
+    ffmpeg.cut_clip(rotated, out, 0, 1, preset="ultrafast",
+                    video_filter=ffmpeg.upscale_filter(info.width, info.height))
+    up = ffmpeg.probe(out)
+    assert (up.width, up.height) == (1080, 1920)

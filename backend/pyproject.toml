@@ -1,0 +1,33 @@
+[project]
+name = "twapza"
+version = "0.1.0"
+description = "Twapza: repurpose your own long-form videos into short clips"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.4",
+    "sqlmodel>=0.0.22",
+    "rq>=2.0",
+    "redis>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "fakeredis>=2.24",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["twapza*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ffmpeg: tests that shell out to ffmpeg/ffprobe (skipped if not installed)",
+]

@@ -12,7 +12,7 @@ from twapza.clipping.simple import plan_simple_clips
 from twapza.config import get_settings
 from twapza.db.models import Clip, ClipSource, Job, JobType, Project, ProjectStatus
 from twapza.db.session import get_engine
-from twapza.exports import ExportSettings, export_filename, export_key
+from twapza.exports import ExportSettings, export_filename, export_key, video_filter
 from twapza.media import ffmpeg
 from twapza.queue import ProgressReporter, run_tracked
 from twapza.storage import get_storage
@@ -101,12 +101,10 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
             on_progress(1.0)
         return key
     app = get_settings()
-    video_filter = None
-    if settings.upscale_1080:
-        video_filter = ffmpeg.upscale_filter(project.width or 0, project.height or 0)
+    vf = video_filter(settings, project.width or 0, project.height or 0)
     with storage.read_path(project.original_key) as src, storage.write_path(key) as dst:
         ffmpeg.cut_clip(src, dst, clip.start, clip.end, preset=app.export_preset,
-                        crf=app.export_crf, video_filter=video_filter, on_progress=on_progress)
+                        crf=app.export_crf, video_filter=vf, on_progress=on_progress)
     return key
 
 
@@ -262,6 +260,6 @@ def export_zip(job_id: str, project_id: str, clip_ids: list[str], settings_json:
             with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
                 for clip, key in rendered:
                     with storage.read_path(key) as path:
-                        zf.write(path, arcname=export_filename(project, clip))
+                        zf.write(path, arcname=export_filename(project, clip, settings))
 
     run_tracked(job_id, body)

@@ -93,6 +93,24 @@ def test_exports_upscale_small_videos_to_1080p_unless_disabled(client, ready_pro
     assert sizes == {True: (1440, 1080), False: (320, 240)}  # source is 320x240
 
 
+def test_vertical_export_for_shorts(client, ready_project, tmp_path):
+    from twapza.media import ffmpeg as media
+
+    clip = generate(client, ready_project["id"], 15)[0]
+    job = client.post(f"/api/clips/{clip['id']}/export",
+                      json={"settings": {"aspect": "9:16", "vertical_fit": "blur"}}).json()
+    assert job["status"] == "succeeded", job
+    r = client.get(job["download_url"])
+    assert "_vertical.mp4" in r.headers["content-disposition"]
+    out = tmp_path / "v.mp4"
+    out.write_bytes(r.content)
+    info = media.probe(out)
+    assert (info.width, info.height) == (1080, 1920)
+
+    bad = client.post(f"/api/clips/{clip['id']}/export", json={"settings": {"aspect": "4:5"}})
+    assert bad.status_code == 422
+
+
 def test_regenerating_replaces_previous_clips(client, ready_project):
     pid = ready_project["id"]
     first = generate(client, pid, 15)

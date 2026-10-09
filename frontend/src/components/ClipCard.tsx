@@ -29,7 +29,13 @@ export function ClipCard({ clip, proxyUrl, settings }: Props) {
 
   return (
     <article className="flex flex-col gap-3 rounded-xl bg-white p-3 shadow-sm">
-      <ClipPlayer src={proxyUrl} start={clip.start} end={clip.end} poster={clip.thumbnail_url} />
+      <ClipPlayer
+        src={proxyUrl}
+        start={clip.start}
+        end={clip.end}
+        poster={clip.thumbnail_url}
+        frame={settings?.aspect === "9:16" ? settings.vertical_fit : "original"}
+      />
       <div className="flex items-baseline justify-between gap-2 text-sm">
         <span className="font-medium">Clip {clip.index}</span>
         <span className="text-slate-500 tabular-nums">

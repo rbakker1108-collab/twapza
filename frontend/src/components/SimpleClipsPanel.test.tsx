@@ -15,34 +15,64 @@ const clip: Clip = {
   text: "hello", title: null, hook: null, score: null, reason: null, thumbnail_url: "/t.jpg",
 };
 
-describe("SimpleClipsPanel upscale option", () => {
+describe("SimpleClipsPanel download format", () => {
+  let exportZip: ReturnType<typeof vi.spyOn>;
+  const zip = () => userEvent.click(screen.getByRole("button", { name: "Download all (ZIP)" }));
+
   beforeEach(() => {
     vi.spyOn(api, "listClips").mockResolvedValue([clip]);
+    exportZip = vi.spyOn(api, "exportZip").mockRejectedValue(new Error("stop"));
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("offers 1080p upscaling for low-res videos and sends it with exports", async () => {
-    const exportZip = vi.spyOn(api, "exportZip").mockRejectedValue(new Error("stop"));
-    render(<SimpleClipsPanel project={project(1280, 720)} />);
-    const box = await screen.findByRole("checkbox", { name: /upscale downloads to 1080p/i });
-    expect(box).toBeChecked();
-    expect(screen.getByText("(source is 720p)")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Download all (ZIP)" }));
+  it("defaults to vertical 9:16 center crop for Shorts/TikTok", async () => {
+    render(<SimpleClipsPanel project={project(1920, 1080)} />);
+    expect(await screen.findByRole("radio", { name: /vertical 9:16/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /crop to center/i })).toBeChecked();
+    expect(screen.getByTestId("clip-frame")).toHaveClass("aspect-[9/16]");
+    await zip();
     await waitFor(() =>
-      expect(exportZip).toHaveBeenCalledWith("p1", "simple", { aspect: "original", upscale_1080: true }),
-    );
-
-    await userEvent.click(box);
-    await userEvent.click(screen.getByRole("button", { name: "Download all (ZIP)" }));
-    await waitFor(() =>
-      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple", { aspect: "original", upscale_1080: false }),
+      expect(exportZip).toHaveBeenCalledWith("p1", "simple",
+        { aspect: "9:16", vertical_fit: "crop", upscale_1080: false }),
     );
   });
 
-  it("hides the option for videos that are already 1080p or larger", async () => {
+  it("can fit with a blurred background", async () => {
     render(<SimpleClipsPanel project={project(1920, 1080)} />);
-    await screen.findByText("1 clip");
+    await userEvent.click(await screen.findByRole("radio", { name: /blurred background/i }));
+    await zip();
+    await waitFor(() =>
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple",
+        expect.objectContaining({ aspect: "9:16", vertical_fit: "blur" })),
+    );
+  });
+
+  it("offers 1080p upscaling only for original format on low-res videos", async () => {
+    render(<SimpleClipsPanel project={project(1280, 720)} />);
+    await screen.findByRole("radio", { name: /vertical 9:16/i });
+    expect(screen.queryByRole("checkbox", { name: /upscale/i })).toBeNull();
+
+    await userEvent.click(screen.getByRole("radio", { name: /original/i }));
+    const box = screen.getByRole("checkbox", { name: /upscale downloads to 1080p/i });
+    expect(box).toBeChecked();
+    expect(screen.getByTestId("clip-frame")).toHaveClass("aspect-video");
+    await zip();
+    await waitFor(() =>
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple",
+        expect.objectContaining({ aspect: "original", upscale_1080: true })),
+    );
+
+    await userEvent.click(box);
+    await zip();
+    await waitFor(() =>
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple",
+        expect.objectContaining({ aspect: "original", upscale_1080: false })),
+    );
+  });
+
+  it("never upscales videos that are already 1080p", async () => {
+    render(<SimpleClipsPanel project={project(1920, 1080)} />);
+    await userEvent.click(await screen.findByRole("radio", { name: /original/i }));
     expect(screen.queryByRole("checkbox", { name: /upscale/i })).toBeNull();
   });
 });

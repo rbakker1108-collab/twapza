@@ -12,17 +12,37 @@ from typing import Literal
 from pydantic import BaseModel
 
 from twapza.db.models import Clip, Project
+from twapza.media import ffmpeg
 
 
 class ExportSettings(BaseModel):
-    # Stage 4 adds "9:16" and caption options.
-    aspect: Literal["original"] = "original"
-    # Upscale clips whose shorter side is below 1080 px to 1080p (never downscales).
+    # "9:16" = vertical 1080x1920 for YouTube Shorts / TikTok / Reels.
+    # Stage 4 adds caption options.
+    aspect: Literal["original", "9:16"] = "original"
+    # How landscape footage fills the vertical frame (only used for "9:16").
+    vertical_fit: Literal["crop", "blur"] = "crop"
+    # Upscale clips whose shorter side is below 1080 px to 1080p (only used for
+    # "original"; vertical exports are always 1080x1920).
     upscale_1080: bool = True
+
+    def normalized(self) -> "ExportSettings":
+        """Drop options that don't affect the output, so equal outputs share a cache key."""
+        if self.aspect == "9:16":
+            return self.model_copy(update={"upscale_1080": False})
+        return self.model_copy(update={"vertical_fit": "crop"})
+
+
+def video_filter(settings: ExportSettings, width: int, height: int) -> str | None:
+    """The ffmpeg video filter for these export settings and source size."""
+    if settings.aspect == "9:16":
+        return ffmpeg.vertical_filter(settings.vertical_fit)
+    if settings.upscale_1080:
+        return ffmpeg.upscale_filter(width, height)
+    return None
 
 
 def export_key(clip: Clip, settings: ExportSettings) -> str:
-    fingerprint = f"{clip.start:.3f}|{clip.end:.3f}|{settings.model_dump_json()}"
+    fingerprint = f"{clip.start:.3f}|{clip.end:.3f}|{settings.normalized().model_dump_json()}"
     digest = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
     return f"{clip.exports_prefix}{digest}.mp4"
 
@@ -38,9 +58,10 @@ def safe_stem(name: str) -> str:
     return stem[:80] or "video"
 
 
-def export_filename(project: Project, clip: Clip) -> str:
+def export_filename(project: Project, clip: Clip, settings: ExportSettings | None = None) -> str:
+    suffix = "_vertical" if settings and settings.aspect == "9:16" else ""
     return (f"{safe_stem(project.stem)}_{clip.source.value}{clip.index:02d}_"
-            f"{_timestamp(clip.start)}-{_timestamp(clip.end)}.mp4")
+            f"{_timestamp(clip.start)}-{_timestamp(clip.end)}{suffix}.mp4")
 
 
 def zip_filename(project: Project) -> str:

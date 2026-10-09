@@ -33,9 +33,15 @@ export interface Clip {
   thumbnail_url: string;
 }
 
+export type Aspect = "original" | "9:16";
+export type VerticalFit = "crop" | "blur";
+
 export interface ExportSettings {
-  aspect: "original";
-  /** Upscale clips whose shorter side is below 1080 px (never downscales). */
+  /** "9:16" = 1080x1920 for YouTube Shorts / TikTok / Reels. */
+  aspect: Aspect;
+  /** How landscape footage fills the vertical frame (only for "9:16"). */
+  vertical_fit: VerticalFit;
+  /** Upscale clips whose shorter side is below 1080 px (only for "original"). */
   upscale_1080: boolean;
 }
 

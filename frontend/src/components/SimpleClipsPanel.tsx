@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, type Clip, type ExportSettings, type Job, type Project } from "../api/client";
 import { isFinished, runAndDownload, watchJob } from "../lib/jobs";
 import { ClipCard } from "./ClipCard";
+import { canUpscale, DEFAULT_EXPORT, ExportOptions } from "./ExportOptions";
 import { ProgressBar } from "./ProgressBar";
 
 interface Props {
@@ -19,11 +20,9 @@ export function SimpleClipsPanel({ project, minSeconds = 15, maxSeconds = 180 }:
   const [genJob, setGenJob] = useState<Job | null>(null);
   const [zipJob, setZipJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [upscale, setUpscale] = useState(true);
-
-  const shortSide = Math.min(project.width ?? 0, project.height ?? 0);
-  const canUpscale = shortSide > 0 && shortSide < 1080;
-  const settings: ExportSettings = { aspect: "original", upscale_1080: canUpscale && upscale };
+  const [options, setOptions] = useState<ExportSettings>(DEFAULT_EXPORT);
+  const settings: ExportSettings = { ...options, upscale_1080: canUpscale(project) && options.upscale_1080 };
+  const vertical = settings.aspect === "9:16";
 
   const generating = !!genJob && !isFinished(genJob);
   const zipping = !!zipJob && !isFinished(zipJob);
@@ -118,20 +117,12 @@ export function SimpleClipsPanel({ project, minSeconds = 15, maxSeconds = 180 }:
 
       {clips.length > 0 && (
         <>
+          <div className="rounded-xl bg-white p-5 shadow-sm">
+            <ExportOptions project={project} value={options} onChange={setOptions} disabled={zipping} />
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600">{clips.length} {clips.length === 1 ? "clip" : "clips"}</p>
             <div className="flex flex-wrap items-center gap-4">
-              {canUpscale && (
-                <label className="flex items-center gap-2 text-sm" title="Scales the video up so downloads are 1080p. Makes it look cleaner on platforms that expect HD, but can't add detail that isn't in the original.">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-indigo-600"
-                    checked={upscale}
-                    onChange={(e) => setUpscale(e.target.checked)}
-                  />
-                  Upscale downloads to 1080p <span className="text-slate-500">(source is {shortSide}p)</span>
-                </label>
-              )}
               {zipping && (
                 <span className="text-sm text-slate-600">
                   {zipJob?.message ?? "Preparing"} · {Math.round(zipJob?.progress ?? 0)}%
@@ -147,7 +138,9 @@ export function SimpleClipsPanel({ project, minSeconds = 15, maxSeconds = 180 }:
               </button>
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            className={`grid gap-4 ${vertical ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-3"}`}
+          >
             {clips.map((clip) => (
               <ClipCard key={clip.id} clip={clip} proxyUrl={api.proxyUrl(project.id)} settings={settings} />
             ))}

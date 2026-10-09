@@ -51,7 +51,10 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `workers.tasks.ensure_transcript`. Videos without audio get an empty transcript.
 - **Exports are deterministic and cached**: the key is a hash of the clip's start/end
   plus `ExportSettings` (`exports.py`), so re-exporting an unchanged clip is instant and
-  a trimmed clip renders a new file. `ExportSettings.upscale_1080` (default on) upscales
+  a trimmed clip renders a new file. `ExportSettings.normalized()` drops options that don't
+  affect the output before hashing. `exports.video_filter()` picks the ffmpeg filter:
+  `aspect="9:16"` → `ffmpeg.vertical_filter(crop|blur)`, always 1080x1920 (centre crop, or
+  fit over a blurred copy); otherwise `upscale_1080` (default on) upscales
   sources whose short side is < 1080 px via `ffmpeg.upscale_filter` (lanczos + light
   sharpen; output size computed by ffmpeg so rotated phone videos stay correct). Jobs that produce a file store `result_key` /
   `result_name`; the browser downloads via `GET /api/jobs/{id}/download`.
@@ -83,7 +86,8 @@ frontend/src/
   lib/upload.ts        chunked upload with retry/resume
   lib/jobs.ts          watchJob() over SSE, runAndDownload() for export jobs
   hooks/useJob.ts      SSE job subscription
-  components/ClipPlayer.tsx  plays [start,end] of the proxy, loads lazily
+  components/ClipPlayer.tsx  plays [start,end] of the proxy, loads lazily; CSS previews 9:16 framing
+  components/ExportOptions.tsx  download format picker (9:16 crop/blur, original, 1080p upscale)
   components/, pages/  UI (Tailwind)
 ```
 
@@ -154,5 +158,6 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 1. ✅ Skeleton: Compose, chunked upload with rights checkbox, RQ jobs with SSE progress, ingest (probe/audio/proxy), cleanup.
 2. ✅ Transcription (faster-whisper) + simple clipping with sentence-boundary snapping, downloads + ZIP.
 3. AI highlights (Claude), audio-energy/scene refinement, de-duplication, ranked list + trim UI.
-4. 9:16 center crop + burned-in word-highlight captions (ASS).
+4. Burned-in word-highlight captions (ASS). (9:16 centre crop + blurred-fit was pulled
+   forward into Stage 2; face-tracked crop remains a later option.)
 5. Polish: error handling, limits, cleanup verification, README, GPU profile.

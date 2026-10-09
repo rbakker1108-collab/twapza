@@ -3,8 +3,9 @@
 Turn your own long-form videos into short clips.
 
 > **Status: Stage 2 of 5.** Upload, automatic transcription and simple clipping (cuts
-> snapped to sentence ends) with single-clip and ZIP downloads work. AI highlights,
-> vertical crop and captions are coming in the next stages.
+> snapped to sentence ends) with single-clip and ZIP downloads work. Clips download as
+> vertical 1080×1920 for YouTube Shorts / TikTok / Reels (centre crop or blurred-fit) or in
+> the original shape. AI highlights and captions are coming in the next stages.
 
 Twapza works only with videos you upload yourself (mp4, mov or mkv, up to about 3 hours
 and 20 GB). Before uploading, you confirm that you own the video or have permission to

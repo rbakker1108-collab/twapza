@@ -80,7 +80,7 @@ def create_export(
     clip = _clip_or_404(session, clip_id)
     project = _ready_project(session, clip.project_id)
     key = export_key(clip, body.settings)
-    name = export_filename(project, clip)
+    name = export_filename(project, clip, body.settings)
     if storage.exists(key):
         job = completed_job(session, project_id=project.id, job_type=JobType.EXPORT,
                             result_key=key, result_name=name)

@@ -127,3 +127,60 @@ def test_upscale_respects_rotation_flag(tmp_path):
                     video_filter=ffmpeg.upscale_filter(info.width, info.height))
     up = ffmpeg.probe(out)
     assert (up.width, up.height) == (1080, 1920)
+
+
+@pytest.mark.parametrize("mode", ["crop", "blur"])
+@pytest.mark.parametrize("size", ["1280x720", "640x360", "320x240", "1080x1920", "300x300", "854x480"])
+def test_vertical_export_is_always_1080x1920(tmp_path, mode, size):
+    src = make_test_video(tmp_path / "in.mp4", seconds=2, size=size)
+    out = tmp_path / "vertical.mp4"
+    ffmpeg.cut_clip(src, out, 0, 1, preset="ultrafast", video_filter=ffmpeg.vertical_filter(mode))
+    info = ffmpeg.probe(out)
+    assert (info.width, info.height) == (1080, 1920)
+    assert info.has_audio
+
+
+def _frame_rgb(path, x, y):
+    """RGB of one pixel of the first frame."""
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-frames:v", "1",
+         "-vf", f"format=rgb24,crop=1:1:{x}:{y}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        check=True, capture_output=True).stdout
+    return tuple(raw[:3])
+
+
+def _split_colour_video(path):
+    """1280x720: left third red, middle third green, right third blue."""
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=red:size=427x720:d=1",
+         "-f", "lavfi", "-i", "color=green:size=426x720:d=1",
+         "-f", "lavfi", "-i", "color=blue:size=427x720:d=1",
+         "-filter_complex", "[0][1][2]hstack=3", "-c:v", "libx264", "-preset", "ultrafast",
+         "-pix_fmt", "yuv420p", str(path)], check=True)
+    return path
+
+
+def test_vertical_crop_takes_the_centre(tmp_path):
+    src = _split_colour_video(tmp_path / "split.mp4")
+    out = tmp_path / "v.mp4"
+    ffmpeg.cut_clip(src, out, 0, 0.5, preset="ultrafast", video_filter=ffmpeg.vertical_filter("crop"))
+    # A centred 405px-wide slice of a 1280px frame lies inside the green middle third.
+    for x in (20, 540, 1060):
+        r, g, b = _frame_rgb(out, x, 960)
+        assert g > 100 and r < 80 and b < 80, (x, (r, g, b))
+
+
+def test_vertical_blur_keeps_the_whole_frame(tmp_path):
+    src = _split_colour_video(tmp_path / "split.mp4")
+    out = tmp_path / "v.mp4"
+    ffmpeg.cut_clip(src, out, 0, 0.5, preset="ultrafast", video_filter=ffmpeg.vertical_filter("blur"))
+    # The full 16:9 frame is fitted across the width in the vertical middle:
+    # red on the left, green centre, blue on the right.
+    left, centre, right = (_frame_rgb(out, x, 960) for x in (60, 540, 1020))
+    assert left[0] > 150 and centre[1] > 100 and right[2] > 150, (left, centre, right)
+
+
+def test_vertical_rejects_unknown_mode():
+    with pytest.raises(ValueError):
+        ffmpeg.vertical_filter("stretch")

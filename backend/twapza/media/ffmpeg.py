@@ -147,6 +147,32 @@ def upscale_filter(width: int, height: int, min_short_side: int = 1080) -> str |
     return f"scale='{w}':'{h}':flags=lanczos,setsar=1,unsharp=5:5:0.5:5:5:0"
 
 
+VERTICAL_SIZE = (1080, 1920)
+
+
+def vertical_filter(mode: str = "crop") -> str:
+    """ffmpeg filter producing a 1080x1920 (9:16) frame for Shorts / TikTok / Reels.
+
+    ``crop``: take the largest centred 9:16 region and scale it to 1080x1920.
+    ``blur``: fit the whole frame inside 1080x1920 over a blurred, zoomed copy of
+    itself (nothing is cut off; good for screen recordings and wide shots).
+    Expressions are evaluated on the decoded frames, so rotated phone videos work.
+    """
+    w, h = VERTICAL_SIZE
+    if mode == "crop":
+        return (f"crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',"
+                f"scale={w}:{h}:flags=lanczos,setsar=1,unsharp=5:5:0.5:5:5:0")
+    if mode == "blur":
+        # Blur at quarter resolution for speed, then scale back up.
+        return (f"split[bg][fg];"
+                f"[bg]scale={w // 4}:{h // 4}:force_original_aspect_ratio=increase,"
+                f"crop={w // 4}:{h // 4},boxblur=8:2,scale={w}:{h},setsar=1[bgo];"
+                f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2"
+                f":flags=lanczos,setsar=1[fgo];"
+                f"[bgo][fgo]overlay=(W-w)/2:(H-h)/2")
+    raise ValueError(f"unknown vertical mode: {mode!r}")
+
+
 def cut_clip(src: Path, dst: Path, start: float, end: float, *, preset: str = "veryfast",
              crf: int = 20, video_filter: str | None = None,
              on_progress: ProgressCallback | None = None) -> None:

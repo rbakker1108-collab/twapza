@@ -1,13 +1,18 @@
 """RQ task entrypoints. Each takes plain string IDs so it is trivially serialisable."""
 
+import json
 import logging
 import zipfile
 from collections.abc import Callable
+from pathlib import Path
 
 from sqlmodel import Session, delete, select
 
 from twapza import queue as jobqueue
 from twapza import transcription
+from twapza.clipping.highlights import ask_for_candidates, build_highlights
+from twapza.clipping.llm import ClaudeHighlighter, HighlightFinder, chunk_transcript
+from twapza.clipping.signals import detect_scene_cuts, energy_from_wav
 from twapza.clipping.simple import plan_simple_clips
 from twapza.config import get_settings
 from twapza.db.models import Clip, ClipSource, Job, JobType, Project, ProjectStatus
@@ -181,10 +186,38 @@ def transcribe_project(job_id: str, project_id: str) -> None:
     run_tracked(job_id, body)
 
 
+def _replace_clips(project: Project, source: ClipSource, clips: list[Clip],
+                   on_progress: Progress) -> list[Clip]:
+    """Swap a project's clips of ``source`` for ``clips`` and render their thumbnails."""
+    storage = get_storage()
+    with Session(get_engine()) as session:
+        old = session.exec(select(Clip).where(
+            Clip.project_id == project.id, Clip.source == source)).all()
+        for clip in old:
+            storage.delete_prefix(clip.thumbs_prefix)
+            storage.delete_prefix(clip.exports_prefix)
+        session.exec(delete(Clip).where(Clip.project_id == project.id, Clip.source == source))
+        session.add_all(clips)
+        session.commit()
+        for clip in clips:
+            session.refresh(clip)
+
+    with storage.read_path(project.proxy_key) as proxy:
+        for i, clip in enumerate(clips):
+            write_thumbnail(proxy, clip)
+            on_progress((i + 1) / len(clips))
+    on_progress(1.0)
+    return clips
+
+
+def write_thumbnail(proxy: Path, clip: Clip) -> None:
+    with get_storage().write_path(clip.thumbnail_key) as dst:
+        ffmpeg.extract_frame(proxy, dst, clip.thumbnail_at)
+
+
 def generate_simple_clips(job_id: str, project_id: str, target_seconds: float) -> None:
     def body(progress: ProgressReporter) -> None:
         settings = get_settings()
-        storage = get_storage()
         project = _get_project(project_id)
         _require_ready(project)
 
@@ -196,32 +229,94 @@ def generate_simple_clips(job_id: str, project_id: str, target_seconds: float) -
             project.duration or transcript.duration, transcript.words, target_seconds,
             window=settings.snap_window_seconds, min_len=settings.min_clip_seconds,
         )
+        clips = [
+            Clip(project_id=project_id, source=ClipSource.SIMPLE, index=i + 1,
+                 start=span.start, end=span.end, suggested_start=span.start,
+                 suggested_end=span.end, text=transcript.text_between(span.start, span.end))
+            for i, span in enumerate(spans)
+        ]
+        _replace_clips(project, ClipSource.SIMPLE, clips,
+                       progress.stage(85, 100, "Creating thumbnails"))
 
-        with Session(get_engine()) as session:
-            old = session.exec(select(Clip).where(
-                Clip.project_id == project_id, Clip.source == ClipSource.SIMPLE)).all()
-            for clip in old:
-                storage.delete(clip.thumbnail_key)
-                storage.delete_prefix(clip.exports_prefix)
-            session.exec(delete(Clip).where(
-                Clip.project_id == project_id, Clip.source == ClipSource.SIMPLE))
-            clips = [
-                Clip(project_id=project_id, source=ClipSource.SIMPLE, index=i + 1,
-                     start=span.start, end=span.end,
-                     text=transcript.text_between(span.start, span.end))
-                for i, span in enumerate(spans)
-            ]
-            session.add_all(clips)
-            session.commit()
-            for clip in clips:
-                session.refresh(clip)
+    run_tracked(job_id, body)
 
-        thumbs = progress.stage(85, 100, "Creating thumbnails")
-        with storage.read_path(project.proxy_key) as proxy:
-            for i, clip in enumerate(clips):
-                with storage.write_path(clip.thumbnail_key) as dst:
-                    ffmpeg.extract_frame(proxy, dst, clip.start + min(1.0, clip.duration / 2))
-                thumbs((i + 1) / len(clips))
+
+def load_scene_cuts(project: Project, on_progress: Progress | None = None) -> list[float]:
+    """Scene cuts of the video, detected once and cached as ``scenes.json``."""
+    storage = get_storage()
+    if storage.exists(project.scenes_key):
+        with storage.open(project.scenes_key) as f:
+            return json.loads(f.read())
+    with storage.read_path(project.proxy_key) as proxy:
+        cuts = detect_scene_cuts(proxy, duration=project.duration, on_progress=on_progress)
+    with storage.write_path(project.scenes_key) as dst:
+        dst.write_text(json.dumps(cuts))
+    return cuts
+
+
+def get_highlighter() -> HighlightFinder:
+    """The Claude-backed highlight finder (replaced by a fake in tests)."""
+    settings = get_settings()
+    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
+    if not key:
+        raise TaskError("AI highlights need a Claude API key. Add ANTHROPIC_API_KEY to your .env "
+                        "file and restart Twapza.")
+    return ClaudeHighlighter(api_key=key, model=settings.claude_model, effort=settings.claude_effort,
+                             max_per_chunk=settings.highlights_per_chunk)
+
+
+def generate_ai_clips(job_id: str, project_id: str) -> None:
+    def body(progress: ProgressReporter) -> None:
+        settings = get_settings()
+        storage = get_storage()
+        project = _get_project(project_id)
+        _require_ready(project)
+        finder = get_highlighter()  # fail fast on a missing key
+        duration = project.duration or 0
+
+        progress.update(0, "Loading transcript", force=True)
+        transcript = ensure_transcript(project, progress.stage(0, 30, "Transcribing (only needed once)"))
+        chunks = chunk_transcript(transcript, chunk_seconds=settings.highlight_chunk_seconds,
+                                  overlap=settings.highlight_overlap_seconds)
+        if not chunks:
+            raise TaskError("AI highlights need speech, but no words were found in this video.")
+
+        try:
+            cuts = load_scene_cuts(project, progress.stage(30, 45, "Detecting scene changes"))
+        except Exception:  # noqa: BLE001 - a nice-to-have signal; never fail the job on it
+            log.exception("scene detection failed for %s", project_id)
+            cuts = []
+
+        progress.update(45, "Measuring audio energy", force=True)
+        energy = None
+        if project.has_audio and storage.exists(project.audio_key):
+            with storage.read_path(project.audio_key) as wav:
+                energy = energy_from_wav(wav).score
+
+        candidates = ask_for_candidates(
+            finder, chunks, video_title=project.filename, video_duration=duration,
+            min_len=settings.highlight_min_seconds, max_len=settings.highlight_max_seconds,
+            concurrency=settings.claude_concurrency,
+            on_progress=progress.stage(50, 90, f"Claude is reviewing {len(chunks)} part(s) of the video"),
+        )
+
+        progress.update(90, "Ranking moments", force=True)
+        best = build_highlights(
+            candidates, words=transcript.words, scene_cuts=cuts, energy=energy, duration=duration,
+            min_len=settings.highlight_min_seconds, max_len=settings.highlight_max_seconds,
+            limit=settings.max_highlights,
+        )
+        if not best:
+            raise TaskError("Claude didn't find any moments that would work as standalone clips.")
+
+        clips = [
+            Clip(project_id=project_id, source=ClipSource.AI, index=i + 1, start=c.start, end=c.end,
+                 suggested_start=c.start, suggested_end=c.end,
+                 text=transcript.text_between(c.start, c.end), title=c.title, hook=c.hook,
+                 score=c.score, reason=c.reason)
+            for i, c in enumerate(best)
+        ]
+        _replace_clips(project, ClipSource.AI, clips, progress.stage(92, 100, "Creating thumbnails"))
 
     run_tracked(job_id, body)
 

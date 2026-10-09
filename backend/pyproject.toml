@@ -10,12 +10,17 @@ dependencies = [
     "sqlmodel>=0.0.22",
     "rq>=2.0",
     "redis>=5.0",
+    "anthropic>=1.13",
+    "numpy",
 ]
 
 [project.optional-dependencies]
 whisper = [
     "faster-whisper>=1.0",
-    "numpy",
+]
+# Scene-change detection for AI highlights (optional: highlights still work without it)
+scenes = [
+    "scenedetect>=0.6",
 ]
 dev = [
     "pytest>=8",

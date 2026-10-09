@@ -58,8 +58,21 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   sources whose short side is < 1080 px via `ffmpeg.upscale_filter` (lanczos + light
   sharpen; output size computed by ffmpeg so rotated phone videos stay correct). Jobs that produce a file store `result_key` /
   `result_name`; the browser downloads via `GET /api/jobs/{id}/download`.
-- **Schema changes**: bump `SCHEMA_VERSION` in `db/session.py`. On mismatch the DB and
-  stored project files are reset (all data is temporary). Use Alembic once data must survive.
+- **AI highlights** (`clipping/highlights.py`): transcript → sentence lines → ~8 min chunks
+  with 60 s overlap (`clipping/llm.py`) → Claude (`ClaudeHighlighter`, default
+  `claude-sonnet-5-5`, JSON-schema structured output via `output_config.format`, adaptive
+  thinking at `TWAPZA_CLAUDE_EFFORT`, streamed, cached system prompt, server-side refusal
+  `fallbacks: "default"`) → `parse_highlights` (tolerant; never raises) → `refine` (snap edges
+  to sentence boundaries, align start to a nearby PySceneDetect cut, blend 80% model score +
+  20% loudness score) → `dedupe` (greedy NMS on IoU/containment) → top `TWAPZA_MAX_HIGHLIGHTS`.
+  Scene cuts are cached in `scenes.json`; scene detection failing never fails the job.
+  Forced `tool_choice` is not allowed on Sonnet 5.5; keep using structured outputs.
+- **Trimming**: `PATCH /api/clips/{id}` changes start/end; `suggested_start/end` keep the
+  original suggestion for "reset". Thumbnails live in `thumbs/<clip>/<start_ms>.jpg` and are
+  regenerated lazily when missing.
+- **Schema changes**: bump `SCHEMA_VERSION` in `db/session.py` and add the upgrade SQL to
+  `MIGRATIONS` (e.g. `ALTER TABLE ... ADD COLUMN`). Without a migration path the DB and stored
+  project files are reset (all data is temporary). Use Alembic once data must survive.
 
 ## Layout
 
@@ -76,6 +89,10 @@ backend/twapza/
   transcription/       Transcript model + Transcriber protocol; faster_whisper.py backend
   clipping/snapping.py pure: word-gap boundaries, scoring, snap_cut()
   clipping/simple.py   pure: plan_simple_clips() (Feature 1)
+  clipping/llm.py      transcript chunking, prompt, HIGHLIGHT_SCHEMA, parse_highlights(), ClaudeHighlighter
+  clipping/signals.py  audio energy profile/score, PySceneDetect scene cuts
+  clipping/dedupe.py   pure: overlap metrics + greedy NMS
+  clipping/highlights.py  ask_for_candidates() (concurrent chunks), refine(), build_highlights()
   exports.py           ExportSettings, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
@@ -88,11 +105,12 @@ frontend/src/
   hooks/useJob.ts      SSE job subscription
   components/ClipPlayer.tsx  plays [start,end] of the proxy, loads lazily; CSS previews 9:16 framing
   components/ExportOptions.tsx  download format picker (9:16 crop/blur, original, 1080p upscale)
+  components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
+  components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/, pages/  UI (Tailwind)
 ```
 
-Planned modules for later stages: `clipping/` (`llm.py`, `signals.py`, `dedupe.py`,
-`highlights.py`), `captions/ass.py`.
+Planned modules for later stages: `captions/ass.py`.
 
 To add a hosted transcription API: implement `Transcriber` in `transcription/<name>.py`
 and register it in `transcription/get_transcriber()` (selected by `TWAPZA_TRANSCRIBER`).
@@ -149,7 +167,9 @@ make test-docker                      # backend tests inside the image
 Tests use a per-test temp storage dir + SQLite DB, an inline (synchronous) RQ queue on
 fakeredis (also patched in for jobs that workers enqueue themselves), and a
 `FakeTranscriber` producing scripted sentences, so no Redis, model download or API key
-is needed. Synthetic videos are
+is needed. AI tests patch `workers.tasks.get_highlighter` with a scripted finder;
+`test_llm.py::test_real_sdk_request_on_the_wire` drives the real Anthropic SDK against a mock
+HTTP transport to check the request shape. Synthetic videos are
 generated with ffmpeg's `testsrc`/`sine` sources (`tests/conftest.py::make_test_video`).
 External services (Whisper, Claude) must be faked behind their protocols in tests.
 
@@ -157,7 +177,7 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 
 1. ✅ Skeleton: Compose, chunked upload with rights checkbox, RQ jobs with SSE progress, ingest (probe/audio/proxy), cleanup.
 2. ✅ Transcription (faster-whisper) + simple clipping with sentence-boundary snapping, downloads + ZIP.
-3. AI highlights (Claude), audio-energy/scene refinement, de-duplication, ranked list + trim UI.
+3. ✅ AI highlights (Claude), audio-energy/scene refinement, de-duplication, ranked list + trim UI.
 4. Burned-in word-highlight captions (ASS). (9:16 centre crop + blurred-fit was pulled
    forward into Stage 2; face-tracked crop remains a later option.)
 5. Polish: error handling, limits, cleanup verification, README, GPU profile.

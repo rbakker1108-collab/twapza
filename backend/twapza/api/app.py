@@ -39,6 +39,8 @@ def create_app() -> FastAPI:
             "retention_hours": s.retention_hours,
             "min_clip_seconds": s.min_clip_seconds,
             "max_clip_seconds": s.max_clip_seconds,
+            "ai_enabled": bool(s.anthropic_api_key and s.anthropic_api_key.get_secret_value()),
+            "claude_model": s.claude_model,
         }
 
     return app

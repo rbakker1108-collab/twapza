@@ -29,6 +29,7 @@ class JobType(StrEnum):
     SIMPLE_CLIPS = "simple_clips"
     EXPORT = "export"
     EXPORT_ZIP = "export_zip"
+    AI_CLIPS = "ai_clips"
 
 
 class ClipSource(StrEnum):
@@ -90,6 +91,10 @@ class Project(SQLModel, table=True):
         return f"{self.prefix}transcript.json"
 
     @property
+    def scenes_key(self) -> str:
+        return f"{self.prefix}scenes.json"
+
+    @property
     def stem(self) -> str:
         """Filename without extension, for naming downloads."""
         return self.filename.rsplit(".", 1)[0] or "video"
@@ -130,6 +135,9 @@ class Clip(SQLModel, table=True):
     hook: str | None = None
     score: float | None = None
     reason: str | None = None
+    # Where the clip was originally suggested, so a trim can be undone
+    suggested_start: float | None = None
+    suggested_end: float | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
     @property
@@ -137,8 +145,17 @@ class Clip(SQLModel, table=True):
         return self.end - self.start
 
     @property
+    def thumbs_prefix(self) -> str:
+        return f"projects/{self.project_id}/thumbs/{self.id}/"
+
+    @property
     def thumbnail_key(self) -> str:
-        return f"projects/{self.project_id}/thumbs/{self.id}.jpg"
+        # Named by start time so a trimmed clip gets a fresh thumbnail (and URL).
+        return f"{self.thumbs_prefix}{int(self.start * 1000)}.jpg"
+
+    @property
+    def thumbnail_at(self) -> float:
+        return self.start + min(1.0, self.duration / 2)
 
     @property
     def exports_prefix(self) -> str:

@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { api, type Job, type Project, type PublicConfig } from "../api/client";
 import { ProgressBar } from "../components/ProgressBar";
-import { SimpleClipsPanel } from "../components/SimpleClipsPanel";
+import { ClipsWorkspace } from "../components/ClipsWorkspace";
 import { useJob } from "../hooks/useJob";
 import { formatBytes, formatDuration } from "../lib/format";
 
@@ -88,11 +88,7 @@ export function ProjectPage() {
             preload="metadata"
             className="aspect-video w-full max-w-3xl rounded-xl bg-black"
           />
-          <SimpleClipsPanel
-            project={project}
-            minSeconds={config?.min_clip_seconds}
-            maxSeconds={config?.max_clip_seconds}
-          />
+          <ClipsWorkspace project={project} config={config} />
         </>
       ) : failed ? (
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">

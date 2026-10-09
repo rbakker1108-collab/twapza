@@ -138,6 +138,40 @@ def test_video_without_audio_gets_plain_cuts(client, tmp_path, fake_transcriber)
     assert [(c["start"], c["end"]) for c in clips] == [(0, 15), (15, pytest.approx(35, abs=0.1))]
 
 
+def test_schema_v2_database_is_migrated_without_losing_data(isolated_env):
+    """Upgrading from Stage 2 (schema v2) keeps existing projects and clips."""
+    from sqlalchemy import text
+    from sqlmodel import Session
+
+    from twapza.db.models import Clip, ClipSource, Project, utcnow
+    from twapza.db.session import get_engine, init_db
+
+    engine = get_engine()
+    with engine.begin() as conn:  # recreate the v2 clip table (no suggested_* columns)
+        conn.execute(text("DROP TABLE clip"))
+        conn.execute(text(
+            "CREATE TABLE clip (id VARCHAR PRIMARY KEY, project_id VARCHAR, source VARCHAR, "
+            "\"index\" INTEGER, start FLOAT, \"end\" FLOAT, text VARCHAR, title VARCHAR, "
+            "hook VARCHAR, score FLOAT, reason VARCHAR, created_at DATETIME)"))
+        conn.execute(text("PRAGMA user_version = 2"))
+    now = utcnow()
+    with Session(engine) as s:
+        s.add(Project(id="p", filename="a.mp4", ext="mp4", size_bytes=1, chunk_size=1, total_chunks=1,
+                      rights_confirmed_at=now, expires_at=now))
+        s.commit()
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO clip (id, project_id, source, \"index\", start, \"end\", text) "
+                          "VALUES ('c', 'p', 'SIMPLE', 1, 0, 60, 'hi')"))
+
+    init_db()
+    with Session(engine) as s:
+        clip = s.get(Clip, "c")
+        assert clip is not None and clip.source == ClipSource.SIMPLE and clip.suggested_start is None
+        assert s.get(Project, "p") is not None
+    with engine.connect() as conn:
+        assert conn.execute(text("PRAGMA user_version")).scalar() == SCHEMA_VERSION
+
+
 def test_schema_version_mismatch_resets_temporary_data(isolated_env):
     from sqlalchemy import text
 

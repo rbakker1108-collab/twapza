@@ -82,6 +82,8 @@ class ClipRead(BaseModel):
     hook: str | None
     score: float | None
     reason: str | None
+    suggested_start: float | None
+    suggested_end: float | None
     thumbnail_url: str
 
     @classmethod
@@ -90,12 +92,19 @@ class ClipRead(BaseModel):
             id=clip.id, project_id=clip.project_id, source=clip.source, index=clip.index,
             start=clip.start, end=clip.end, duration=round(clip.duration, 3), text=clip.text,
             title=clip.title, hook=clip.hook, score=clip.score, reason=clip.reason,
-            thumbnail_url=f"/api/clips/{clip.id}/thumbnail",
+            suggested_start=clip.suggested_start, suggested_end=clip.suggested_end,
+            # The start time in the URL busts the browser cache after a trim.
+            thumbnail_url=f"/api/clips/{clip.id}/thumbnail?t={int(clip.start * 1000)}",
         )
 
 
 class SimpleClipsRequest(BaseModel):
     target_seconds: float = Field(ge=15, le=180)
+
+
+class TrimRequest(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
 
 
 class ExportRequest(BaseModel):

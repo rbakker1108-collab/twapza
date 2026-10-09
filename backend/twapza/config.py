@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # External services
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     claude_model: str = "claude-sonnet-5-5"
+    claude_effort: str = "high"  # low | medium | high | xhigh | max
+    claude_concurrency: int = 4
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
 
     # Storage
@@ -54,6 +56,14 @@ class Settings(BaseSettings):
     snap_window_seconds: float = 5.0
     min_clip_seconds: float = 15
     max_clip_seconds: float = 180
+
+    # AI highlights
+    highlight_chunk_seconds: float = 480
+    highlight_overlap_seconds: float = 60
+    highlights_per_chunk: int = 5
+    max_highlights: int = 30
+    highlight_min_seconds: float = 15
+    highlight_max_seconds: float = 90
     job_timeout_seconds: int = 6 * 60 * 60
     queue_name: str = "twapza"
 

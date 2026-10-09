@@ -30,6 +30,9 @@ export interface Clip {
   hook: string | null;
   score: number | null;
   reason: string | null;
+  /** Where the clip was originally suggested (for "reset" after trimming). */
+  suggested_start: number | null;
+  suggested_end: number | null;
   thumbnail_url: string;
 }
 
@@ -76,6 +79,8 @@ export interface PublicConfig {
   retention_hours: number;
   min_clip_seconds: number;
   max_clip_seconds: number;
+  ai_enabled: boolean;
+  claude_model: string;
 }
 
 export class ApiError extends Error {
@@ -124,6 +129,14 @@ export const api = {
   getJob: (id: string) => request<Job>(`/api/jobs/${id}`),
   createSimpleClips: (projectId: string, target_seconds: number) =>
     request<Job>(`/api/projects/${projectId}/simple-clips`, json({ target_seconds })),
+  createAiClips: (projectId: string) =>
+    request<Job>(`/api/projects/${projectId}/ai-clips`, { method: "POST" }),
+  trimClip: (clipId: string, start: number, end: number) =>
+    request<Clip>(`/api/clips/${clipId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start, end }),
+    }),
   listClips: (projectId: string, source?: ClipSource) =>
     request<Clip[]>(`/api/projects/${projectId}/clips${source ? `?source=${source}` : ""}`),
   exportClip: (clipId: string, settings?: ExportSettings) =>

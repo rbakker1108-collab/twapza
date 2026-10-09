@@ -1,31 +1,27 @@
 import { useEffect, useState } from "react";
 
 import { api, type Clip, type ExportSettings, type Job, type Project } from "../api/client";
-import { isFinished, runAndDownload, watchJob } from "../lib/jobs";
+import { isFinished, watchJob } from "../lib/jobs";
 import { ClipCard } from "./ClipCard";
-import { canUpscale, DEFAULT_EXPORT, ExportOptions } from "./ExportOptions";
+import { DownloadAllButton } from "./DownloadAllButton";
 import { ProgressBar } from "./ProgressBar";
 
 interface Props {
   project: Project;
+  settings: ExportSettings;
   minSeconds?: number;
   maxSeconds?: number;
 }
 
 const DEFAULT_LENGTH = 60;
 
-export function SimpleClipsPanel({ project, minSeconds = 15, maxSeconds = 180 }: Props) {
+export function SimpleClipsPanel({ project, settings, minSeconds = 15, maxSeconds = 180 }: Props) {
   const [length, setLength] = useState(DEFAULT_LENGTH);
   const [clips, setClips] = useState<Clip[]>([]);
   const [genJob, setGenJob] = useState<Job | null>(null);
-  const [zipJob, setZipJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [options, setOptions] = useState<ExportSettings>(DEFAULT_EXPORT);
-  const settings: ExportSettings = { ...options, upscale_1080: canUpscale(project) && options.upscale_1080 };
   const vertical = settings.aspect === "9:16";
-
   const generating = !!genJob && !isFinished(genJob);
-  const zipping = !!zipJob && !isFinished(zipJob);
 
   useEffect(() => {
     api.listClips(project.id, "simple").then(setClips).catch(() => {});
@@ -52,17 +48,6 @@ export function SimpleClipsPanel({ project, minSeconds = 15, maxSeconds = 180 }:
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generating clips failed.");
       setGenJob(null);
-    }
-  }
-
-  async function downloadAll() {
-    setError(null);
-    try {
-      await runAndDownload(() => api.exportZip(project.id, "simple", settings), setZipJob);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "ZIP export failed.");
-    } finally {
-      setZipJob(null);
     }
   }
 
@@ -117,26 +102,15 @@ export function SimpleClipsPanel({ project, minSeconds = 15, maxSeconds = 180 }:
 
       {clips.length > 0 && (
         <>
-          <div className="rounded-xl bg-white p-5 shadow-sm">
-            <ExportOptions project={project} value={options} onChange={setOptions} disabled={zipping} />
-          </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600">{clips.length} {clips.length === 1 ? "clip" : "clips"}</p>
-            <div className="flex flex-wrap items-center gap-4">
-              {zipping && (
-                <span className="text-sm text-slate-600">
-                  {zipJob?.message ?? "Preparing"} · {Math.round(zipJob?.progress ?? 0)}%
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={downloadAll}
-                disabled={zipping || generating}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70"
-              >
-                Download all (ZIP)
-              </button>
-            </div>
+            <DownloadAllButton
+              projectId={project.id}
+              source="simple"
+              settings={settings}
+              disabled={generating}
+              onError={setError}
+            />
           </div>
           <div
             className={`grid gap-4 ${vertical ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-3"}`}

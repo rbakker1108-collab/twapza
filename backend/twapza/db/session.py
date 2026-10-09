@@ -13,10 +13,23 @@ from twapza.config import get_settings
 
 log = logging.getLogger(__name__)
 
-# Bump whenever a table changes. There are no migrations yet: all data is
-# temporary (24h retention), so on a version mismatch the database and stored
-# project files are reset. Replace with Alembic before real deployments.
-SCHEMA_VERSION = 2
+# Bump whenever a table changes and add the SQL that upgrades the previous
+# version to MIGRATIONS. If there is no migration path (e.g. a much older
+# database), the database and stored project files are reset: all data is
+# temporary (24h retention). Replace with Alembic before real deployments.
+SCHEMA_VERSION = 3
+
+MIGRATIONS: dict[int, list[str]] = {
+    # version reached -> statements that upgrade from version - 1
+    3: [
+        "ALTER TABLE clip ADD COLUMN suggested_start FLOAT",
+        "ALTER TABLE clip ADD COLUMN suggested_end FLOAT",
+    ],
+}
+
+
+def _can_migrate(version: int) -> bool:
+    return version >= 1 and all(v in MIGRATIONS for v in range(version + 1, SCHEMA_VERSION + 1))
 
 
 def _sqlite_path(url: str) -> Path | None:
@@ -76,7 +89,13 @@ def init_db() -> None:
                 has_tables = bool(conn.execute(
                     text("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1")
                 ).first())
-            if has_tables and version != SCHEMA_VERSION:
+            if has_tables and version < SCHEMA_VERSION and _can_migrate(version):
+                with engine.begin() as conn:
+                    for v in range(version + 1, SCHEMA_VERSION + 1):
+                        log.info("migrating database schema to v%s", v)
+                        for statement in MIGRATIONS[v]:
+                            conn.execute(text(statement))
+            elif has_tables and version != SCHEMA_VERSION:
                 log.warning("database schema v%s != v%s: resetting temporary data", version, SCHEMA_VERSION)
                 from twapza.storage import get_storage
 

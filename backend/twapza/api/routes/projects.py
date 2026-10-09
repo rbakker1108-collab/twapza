@@ -44,3 +44,15 @@ def get_proxy(
 ) -> Response:
     project = get_project_or_404(session, project_id)
     return serve_object(storage, project.proxy_key, "video/mp4")
+
+
+@router.get("/{project_id}/transcript")
+def get_transcript(
+    project_id: str,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> Response:
+    project = get_project_or_404(session, project_id)
+    if not storage.exists(project.transcript_key):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "The transcript is not ready yet.")
+    return serve_object(storage, project.transcript_key, "application/json")

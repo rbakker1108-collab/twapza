@@ -1,6 +1,4 @@
-from pathlib import Path
-
-from tests.conftest import requires_ffmpeg
+from tests.conftest import requires_ffmpeg, upload_file
 
 MB = 1024 * 1024  # tests run with TWAPZA_CHUNK_SIZE_MB=1
 
@@ -8,21 +6,6 @@ MB = 1024 * 1024  # tests run with TWAPZA_CHUNK_SIZE_MB=1
 def create(client, **overrides):
     body = {"filename": "talk.mp4", "size_bytes": 10, "rights_confirmed": True} | overrides
     return client.post("/api/uploads", json=body)
-
-
-def upload_file(client, path: Path, filename: str | None = None) -> dict:
-    data = path.read_bytes()
-    r = create(client, filename=filename or path.name, size_bytes=len(data))
-    assert r.status_code == 201, r.text
-    session = r.json()
-    size = session["chunk_size"]
-    for i in range(session["total_chunks"]):
-        put = client.put(f"/api/uploads/{session['project_id']}/chunks/{i}",
-                         content=data[i * size:(i + 1) * size])
-        assert put.status_code == 204, put.text
-    done = client.post(f"/api/uploads/{session['project_id']}/complete")
-    assert done.status_code == 200, done.text
-    return done.json()
 
 
 def test_rights_checkbox_is_required(client):

@@ -44,20 +44,34 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `<key>.part`, writes each chunk at its offset, and renames on `complete`.
   `UploadPart` rows track received chunks; re-sending a chunk is idempotent.
 - Previews use a 720p H.264/AAC **proxy** (`proxy.mp4`) because browsers can't play
-  mkv or many mov codecs. Served with HTTP Range support for seeking.
+  mkv or many mov codecs. Served with HTTP Range support for seeking. Clip previews
+  play a range of the proxy (`ClipPlayer`); nothing is rendered until the user exports.
+- **Transcripts** are produced once per project (queued automatically after ingest)
+  and cached as `transcript.json`; every clipping feature reuses them via
+  `workers.tasks.ensure_transcript`. Videos without audio get an empty transcript.
+- **Exports are deterministic and cached**: the key is a hash of the clip's start/end
+  plus `ExportSettings` (`exports.py`), so re-exporting an unchanged clip is instant and
+  a trimmed clip renders a new file. Jobs that produce a file store `result_key` /
+  `result_name`; the browser downloads via `GET /api/jobs/{id}/download`.
+- **Schema changes**: bump `SCHEMA_VERSION` in `db/session.py`. On mismatch the DB and
+  stored project files are reset (all data is temporary). Use Alembic once data must survive.
 
 ## Layout
 
 ```
 backend/twapza/
   config.py            Settings (pydantic-settings, TWAPZA_* env vars)
-  api/app.py           FastAPI app factory; api/routes/{uploads,projects,jobs}.py
+  api/app.py           FastAPI app factory; api/routes/{uploads,projects,jobs,clips}.py
   api/schemas.py       Response/request models (keep DB models out of responses)
-  db/models.py         SQLModel tables: Project, UploadPart, Job
+  db/models.py         SQLModel tables: Project, UploadPart, Job, Clip
   db/session.py        Engine (SQLite WAL), init_db(), get_session dependency
   storage/             Storage protocol + LocalStorage
   queue/__init__.py    RQ queue, enqueue_job(), ProgressReporter, run_tracked()
-  media/ffmpeg.py      probe / extract_audio / make_proxy / run_ffmpeg (progress parsing)
+  media/ffmpeg.py      probe / extract_audio / make_proxy / cut_clip / extract_frame / run_ffmpeg
+  transcription/       Transcript model + Transcriber protocol; faster_whisper.py backend
+  clipping/snapping.py pure: word-gap boundaries, scoring, snap_cut()
+  clipping/simple.py   pure: plan_simple_clips() (Feature 1)
+  exports.py           ExportSettings, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
   cleanup.py           retention cleanup; `python -m twapza.cleanup [--once]`
@@ -65,13 +79,17 @@ backend/tests/         pytest (unit + ffmpeg integration on synthetic media)
 frontend/src/
   api/client.ts        typed API client
   lib/upload.ts        chunked upload with retry/resume
+  lib/jobs.ts          watchJob() over SSE, runAndDownload() for export jobs
   hooks/useJob.ts      SSE job subscription
+  components/ClipPlayer.tsx  plays [start,end] of the proxy, loads lazily
   components/, pages/  UI (Tailwind)
 ```
 
-Planned modules for later stages: `transcription/` (Transcriber protocol,
-faster-whisper backend), `clipping/` (`snapping.py`, `simple.py`, `llm.py`,
-`signals.py`, `dedupe.py`, `highlights.py`), `captions/ass.py`.
+Planned modules for later stages: `clipping/` (`llm.py`, `signals.py`, `dedupe.py`,
+`highlights.py`), `captions/ass.py`.
+
+To add a hosted transcription API: implement `Transcriber` in `transcription/<name>.py`
+and register it in `transcription/get_transcriber()` (selected by `TWAPZA_TRANSCRIBER`).
 
 ## Conventions
 
@@ -99,11 +117,15 @@ cp .env.example .env        # add ANTHROPIC_API_KEY when you reach AI highlights
 docker compose up --build   # UI: http://localhost:8080 · API docs: http://localhost:8000/docs
 ```
 
+One worker processes jobs one at a time. For parallel exports/transcriptions:
+`docker compose up --scale twapza-worker=2`.
+
 Without Docker (needs Python 3.11+, Node 22, ffmpeg, redis-server):
 
 ```bash
 cd backend && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 redis-server &                                    # or any Redis on REDIS_URL
+pip install -e ".[whisper]"                       # faster-whisper (model downloads on first use)
 python -m twapza.workers &                        # worker
 uvicorn twapza.api.app:app --reload --port 8000   # API
 cd ../frontend && npm install && npm run dev      # UI: http://localhost:5173 (proxies /api)
@@ -118,15 +140,17 @@ make test                             # both
 make test-docker                      # backend tests inside the image
 ```
 
-Tests use a per-test temp storage dir + SQLite DB and an inline (synchronous) RQ queue
-on fakeredis, so no Redis, model download or API key is needed. Synthetic videos are
+Tests use a per-test temp storage dir + SQLite DB, an inline (synchronous) RQ queue on
+fakeredis (also patched in for jobs that workers enqueue themselves), and a
+`FakeTranscriber` producing scripted sentences, so no Redis, model download or API key
+is needed. Synthetic videos are
 generated with ffmpeg's `testsrc`/`sine` sources (`tests/conftest.py::make_test_video`).
 External services (Whisper, Claude) must be faked behind their protocols in tests.
 
 ## Build stages
 
 1. ✅ Skeleton: Compose, chunked upload with rights checkbox, RQ jobs with SSE progress, ingest (probe/audio/proxy), cleanup.
-2. Transcription (faster-whisper) + simple clipping with sentence-boundary snapping, downloads + ZIP.
+2. ✅ Transcription (faster-whisper) + simple clipping with sentence-boundary snapping, downloads + ZIP.
 3. AI highlights (Claude), audio-energy/scene refinement, de-duplication, ranked list + trim UI.
 4. 9:16 center crop + burned-in word-highlight captions (ASS).
 5. Polish: error handling, limits, cleanup verification, README, GPU profile.

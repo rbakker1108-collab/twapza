@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlmodel import Session, delete, select
 
 from twapza.config import get_settings
-from twapza.db.models import Job, Project, UploadPart, utcnow
+from twapza.db.models import Clip, Job, Project, UploadPart, utcnow
 from twapza.db.session import get_engine, init_db
 from twapza.storage import Storage, get_storage
 
@@ -23,6 +23,7 @@ def delete_project(session: Session, storage: Storage, project: Project) -> None
     storage.delete_prefix(project.prefix)
     session.exec(delete(UploadPart).where(UploadPart.project_id == project.id))
     session.exec(delete(Job).where(Job.project_id == project.id))
+    session.exec(delete(Clip).where(Clip.project_id == project.id))
     session.delete(project)
 
 

@@ -39,6 +39,21 @@ class Settings(BaseSettings):
 
     # Processing
     proxy_height: int = 720
+    export_preset: str = "veryfast"
+    export_crf: int = 20
+
+    # Transcription
+    transcriber: str = "faster_whisper"
+    whisper_model: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+    whisper_language: str | None = None  # None = auto-detect
+    whisper_model_dir: Path = Path("./data/models")
+
+    # Simple clipping
+    snap_window_seconds: float = 5.0
+    min_clip_seconds: float = 15
+    max_clip_seconds: float = 180
     job_timeout_seconds: int = 6 * 60 * 60
     queue_name: str = "twapza"
 

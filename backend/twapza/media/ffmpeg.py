@@ -128,3 +128,31 @@ def make_proxy(src: Path, dst: Path, *, max_height: int = 720, has_audio: bool =
         "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-f", "mp4", str(dst),
     ]
     run_ffmpeg(args, duration=duration, on_progress=on_progress)
+
+
+def cut_clip(src: Path, dst: Path, start: float, end: float, *, preset: str = "veryfast",
+             crf: int = 20, on_progress: ProgressCallback | None = None) -> None:
+    """Re-encode ``[start, end)`` of ``src`` into a new H.264/AAC mp4.
+
+    Always re-encodes (never stream-copies) so the cut is frame-accurate rather
+    than snapping to the nearest keyframe.
+    """
+    if end <= start:
+        raise MediaError("Clip end must be after its start.")
+    duration = end - start
+    run_ffmpeg(
+        ["-ss", f"{start:.3f}", "-i", str(src), "-t", f"{duration:.3f}",
+         "-map", "0:v:0", "-map", "0:a:0?",
+         "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "160k",
+         "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", "-f", "mp4", str(dst)],
+        duration=duration, on_progress=on_progress,
+    )
+
+
+def extract_frame(src: Path, dst: Path, at: float, *, height: int = 270) -> None:
+    """Save a single JPEG frame (used for clip thumbnails)."""
+    run_ffmpeg(
+        ["-ss", f"{max(0.0, at):.3f}", "-i", str(src), "-frames:v", "1",
+         "-vf", f"scale=-2:{height}", "-q:v", "4", "-f", "image2", str(dst)],
+    )

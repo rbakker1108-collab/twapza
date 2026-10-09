@@ -2,8 +2,9 @@
 
 Turn your own long-form videos into short clips.
 
-> **Status: Stage 1 of 5.** Upload, background processing and preview work. Clipping,
-> AI highlights, vertical crop and captions are coming in the next stages.
+> **Status: Stage 2 of 5.** Upload, automatic transcription and simple clipping (cuts
+> snapped to sentence ends) with single-clip and ZIP downloads work. AI highlights,
+> vertical crop and captions are coming in the next stages.
 
 Twapza works only with videos you upload yourself (mp4, mov or mkv, up to about 3 hours
 and 20 GB). Before uploading, you confirm that you own the video or have permission to
@@ -19,6 +20,10 @@ docker compose up --build
 
 - App: <http://localhost:8080>
 - API docs: <http://localhost:8000/docs>
+
+The first transcription downloads the Whisper model (`small`, ~500 MB) into the
+`twapza-data` volume. Transcription runs on the CPU, so long videos take a while;
+set `TWAPZA_WHISPER_MODEL=base` in `.env` for faster, less accurate results.
 
 ## Development
 

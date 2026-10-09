@@ -10,6 +10,7 @@ x-backend: &backend
     REDIS_URL: redis://twapza-redis:6379/0
     TWAPZA_STORAGE_ROOT: /data/storage
     TWAPZA_DATABASE_URL: sqlite:////data/twapza.db
+    TWAPZA_WHISPER_MODEL_DIR: /data/models
   volumes:
     - twapza-data:/data
   depends_on:

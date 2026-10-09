@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from twapza.api.routes import jobs, projects, uploads
+from twapza.api.routes import clips, jobs, projects, uploads
 from twapza.config import ALLOWED_EXTENSIONS, get_settings
 from twapza.db.session import init_db
 
@@ -22,6 +22,7 @@ def create_app() -> FastAPI:
     app.include_router(uploads.router)
     app.include_router(projects.router)
     app.include_router(jobs.router)
+    app.include_router(clips.router)
 
     @app.get("/api/health", tags=["meta"])
     def health() -> dict:
@@ -36,6 +37,8 @@ def create_app() -> FastAPI:
             "max_duration_seconds": s.max_duration_seconds,
             "allowed_extensions": list(ALLOWED_EXTENSIONS),
             "retention_hours": s.retention_hours,
+            "min_clip_seconds": s.min_clip_seconds,
+            "max_clip_seconds": s.max_clip_seconds,
         }
 
     return app

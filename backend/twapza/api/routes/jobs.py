@@ -2,12 +2,14 @@ import asyncio
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlmodel import Session
 
 from twapza.api.schemas import JobRead
-from twapza.db.models import Job
+from twapza.api.routes.projects import serve_object
+from twapza.db.models import Job, JobStatus
 from twapza.db.session import get_engine, get_session
+from twapza.storage import Storage, get_storage
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -27,6 +29,21 @@ def get_job(job_id: str, session: Session = Depends(get_session)) -> JobRead:
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found.")
     return JobRead.of(job)
+
+
+@router.get("/{job_id}/download")
+def download_job_result(
+    job_id: str,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> Response:
+    job = session.get(Job, job_id)
+    if job is None or not job.result_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nothing to download.")
+    if job.status != JobStatus.SUCCEEDED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The file is not ready yet.")
+    media_type = "application/zip" if job.result_key.endswith(".zip") else "video/mp4"
+    return serve_object(storage, job.result_key, media_type, download_name=job.result_name)
 
 
 @router.get("/{job_id}/events")

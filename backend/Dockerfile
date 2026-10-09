@@ -12,7 +12,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY pyproject.toml ./
 COPY twapza ./twapza
-RUN pip install ".[dev]"
+RUN pip install ".[dev,whisper]"
 COPY tests ./tests
 
 RUN useradd --create-home --uid 1000 twapza && mkdir -p /data && chown twapza /data

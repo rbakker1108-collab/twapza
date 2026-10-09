@@ -39,10 +39,12 @@ def enqueue_job(
     project_id: str,
     job_type: JobType,
     func: Callable[..., None],
+    result_key: str | None = None,
+    result_name: str | None = None,
     **kwargs,
 ) -> Job:
     """Create a ``Job`` row and hand it to RQ. ``func`` is called as ``func(job_id, project_id, **kwargs)``."""
-    job = Job(project_id=project_id, type=job_type)
+    job = Job(project_id=project_id, type=job_type, result_key=result_key, result_name=result_name)
     session.add(job)
     session.commit()
     session.refresh(job)
@@ -53,6 +55,20 @@ def enqueue_job(
         result_ttl=3600,
         failure_ttl=24 * 3600,
     )
+    session.refresh(job)
+    return job
+
+
+def completed_job(
+    session: Session, *, project_id: str, job_type: JobType, result_key: str, result_name: str,
+) -> Job:
+    """Record an already-finished job, e.g. when an export is served from cache."""
+    now = utcnow()
+    job = Job(project_id=project_id, type=job_type, status=JobStatus.SUCCEEDED, progress=100.0,
+              message="Done", result_key=result_key, result_name=result_name,
+              started_at=now, finished_at=now)
+    session.add(job)
+    session.commit()
     session.refresh(job)
     return job
 

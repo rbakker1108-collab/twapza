@@ -2,7 +2,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from twapza.db.models import Job, JobStatus, JobType, Project, ProjectStatus
+from twapza.exports import ExportSettings
+
+from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
 
 
 class CreateUpload(BaseModel):
@@ -29,10 +31,14 @@ class JobRead(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    download_url: str | None = None
 
     @classmethod
     def of(cls, job: Job) -> "JobRead":
-        return cls.model_validate(job, from_attributes=True)
+        data = cls.model_validate(job, from_attributes=True)
+        if job.result_key and job.status == JobStatus.SUCCEEDED:
+            data.download_url = f"/api/jobs/{job.id}/download"
+        return data
 
 
 class ProjectRead(BaseModel):
@@ -61,3 +67,42 @@ class ProjectRead(BaseModel):
 class CompleteUploadResponse(BaseModel):
     project: ProjectRead
     job: JobRead
+
+
+class ClipRead(BaseModel):
+    id: str
+    project_id: str
+    source: ClipSource
+    index: int
+    start: float
+    end: float
+    duration: float
+    text: str
+    title: str | None
+    hook: str | None
+    score: float | None
+    reason: str | None
+    thumbnail_url: str
+
+    @classmethod
+    def of(cls, clip: Clip) -> "ClipRead":
+        return cls(
+            id=clip.id, project_id=clip.project_id, source=clip.source, index=clip.index,
+            start=clip.start, end=clip.end, duration=round(clip.duration, 3), text=clip.text,
+            title=clip.title, hook=clip.hook, score=clip.score, reason=clip.reason,
+            thumbnail_url=f"/api/clips/{clip.id}/thumbnail",
+        )
+
+
+class SimpleClipsRequest(BaseModel):
+    target_seconds: float = Field(ge=15, le=180)
+
+
+class ExportRequest(BaseModel):
+    settings: ExportSettings = ExportSettings()
+
+
+class ZipExportRequest(BaseModel):
+    source: ClipSource = ClipSource.SIMPLE
+    clip_ids: list[str] | None = None  # None = every clip of `source`
+    settings: ExportSettings = ExportSettings()

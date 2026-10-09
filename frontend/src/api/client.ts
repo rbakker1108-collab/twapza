@@ -12,6 +12,29 @@ export interface Job {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  download_url: string | null;
+}
+
+export type ClipSource = "simple" | "ai";
+
+export interface Clip {
+  id: string;
+  project_id: string;
+  source: ClipSource;
+  index: number;
+  start: number;
+  end: number;
+  duration: number;
+  text: string;
+  title: string | null;
+  hook: string | null;
+  score: number | null;
+  reason: string | null;
+  thumbnail_url: string;
+}
+
+export interface ExportSettings {
+  aspect: "original";
 }
 
 export interface Project {
@@ -43,6 +66,8 @@ export interface PublicConfig {
   max_duration_seconds: number;
   allowed_extensions: string[];
   retention_hours: number;
+  min_clip_seconds: number;
+  max_clip_seconds: number;
 }
 
 export class ApiError extends Error {
@@ -88,5 +113,14 @@ export const api = {
     request<{ project: Project; job: Job }>(`/api/uploads/${id}/complete`, { method: "POST" }),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   proxyUrl: (id: string) => `/api/projects/${id}/proxy`,
+  getJob: (id: string) => request<Job>(`/api/jobs/${id}`),
+  createSimpleClips: (projectId: string, target_seconds: number) =>
+    request<Job>(`/api/projects/${projectId}/simple-clips`, json({ target_seconds })),
+  listClips: (projectId: string, source?: ClipSource) =>
+    request<Clip[]>(`/api/projects/${projectId}/clips${source ? `?source=${source}` : ""}`),
+  exportClip: (clipId: string, settings?: ExportSettings) =>
+    request<Job>(`/api/clips/${clipId}/export`, json({ settings })),
+  exportZip: (projectId: string, source: ClipSource, settings?: ExportSettings) =>
+    request<Job>(`/api/projects/${projectId}/export-zip`, json({ source, settings })),
   jobEventsUrl: (id: string) => `/api/jobs/${id}/events`,
 };

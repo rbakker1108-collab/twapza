@@ -51,3 +51,36 @@ def test_extract_audio(sample_video, tmp_path):
     out = tmp_path / "audio.wav"
     ffmpeg.extract_audio(sample_video, out)
     assert out.stat().st_size > 16000 * 2  # >1s of 16-bit mono
+
+
+def test_cut_clip_is_accurate_and_leaves_source_untouched(tmp_path):
+    src = make_test_video(tmp_path / "long.mp4", seconds=10)
+    before = src.read_bytes()
+    out = tmp_path / "clip.mp4"
+    seen: list[float] = []
+    ffmpeg.cut_clip(src, out, 2.5, 6.25, preset="ultrafast", on_progress=seen.append)
+    info = ffmpeg.probe(out)
+    assert info.duration == pytest.approx(3.75, abs=0.1)
+    assert info.has_audio
+    assert seen[-1] == 1.0
+    assert src.read_bytes() == before
+
+
+def test_cut_clip_without_audio(tmp_path):
+    src = make_test_video(tmp_path / "silent.mp4", seconds=4, audio=False)
+    out = tmp_path / "clip.mp4"
+    ffmpeg.cut_clip(src, out, 1, 3, preset="ultrafast")
+    info = ffmpeg.probe(out)
+    assert info.duration == pytest.approx(2, abs=0.1)
+    assert not info.has_audio
+
+
+def test_cut_clip_rejects_empty_range(tmp_path, sample_video):
+    with pytest.raises(ffmpeg.MediaError):
+        ffmpeg.cut_clip(sample_video, tmp_path / "x.mp4", 2, 2)
+
+
+def test_extract_frame(sample_video, tmp_path):
+    out = tmp_path / "thumb.jpg"
+    ffmpeg.extract_frame(sample_video, out, 1.0, height=120)
+    assert out.read_bytes()[:2] == b"\xff\xd8"  # JPEG magic

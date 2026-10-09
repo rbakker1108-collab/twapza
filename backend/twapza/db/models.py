@@ -25,6 +25,15 @@ class ProjectStatus(StrEnum):
 
 class JobType(StrEnum):
     INGEST = "ingest"
+    TRANSCRIBE = "transcribe"
+    SIMPLE_CLIPS = "simple_clips"
+    EXPORT = "export"
+    EXPORT_ZIP = "export_zip"
+
+
+class ClipSource(StrEnum):
+    SIMPLE = "simple"
+    AI = "ai"
 
 
 class JobStatus(StrEnum):
@@ -76,6 +85,15 @@ class Project(SQLModel, table=True):
     def audio_key(self) -> str:
         return f"{self.prefix}audio.wav"
 
+    @property
+    def transcript_key(self) -> str:
+        return f"{self.prefix}transcript.json"
+
+    @property
+    def stem(self) -> str:
+        """Filename without extension, for naming downloads."""
+        return self.filename.rsplit(".", 1)[0] or "video"
+
 
 class UploadPart(SQLModel, table=True):
     project_id: str = Field(foreign_key="project.id", primary_key=True)
@@ -94,3 +112,34 @@ class Job(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    # Jobs that produce a downloadable file (exports, ZIPs)
+    result_key: str | None = None
+    result_name: str | None = None
+
+
+class Clip(SQLModel, table=True):
+    id: str = Field(default_factory=new_id, primary_key=True)
+    project_id: str = Field(foreign_key="project.id", index=True)
+    source: ClipSource
+    index: int
+    start: float
+    end: float
+    text: str = ""
+    # AI highlight fields (Stage 3)
+    title: str | None = None
+    hook: str | None = None
+    score: float | None = None
+    reason: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
+
+    @property
+    def thumbnail_key(self) -> str:
+        return f"projects/{self.project_id}/thumbs/{self.id}.jpg"
+
+    @property
+    def exports_prefix(self) -> str:
+        return f"projects/{self.project_id}/exports/{self.id}/"

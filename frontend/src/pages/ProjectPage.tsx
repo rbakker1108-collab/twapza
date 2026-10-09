@@ -1,32 +1,55 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { api, type Project } from "../api/client";
+import { api, type Job, type Project, type PublicConfig } from "../api/client";
 import { ProgressBar } from "../components/ProgressBar";
+import { SimpleClipsPanel } from "../components/SimpleClipsPanel";
 import { useJob } from "../hooks/useJob";
 import { formatBytes, formatDuration } from "../lib/format";
+
+const latest = (jobs: Job[], type: string) => [...jobs].reverse().find((j) => j.type === type) ?? null;
+
+function TranscriptStatus({ job, hasAudio }: { job: Job | null; hasAudio: boolean | null }) {
+  if (hasAudio === false) return <p className="text-sm text-slate-500">No audio track: clips will be cut at exact intervals.</p>;
+  if (!job) return null;
+  if (job.status === "succeeded") return <p className="text-sm text-emerald-700">✓ Transcript ready</p>;
+  if (job.status === "failed")
+    return <p className="text-sm text-red-700">Transcription failed: {job.error}. Generating clips will retry it.</p>;
+  return (
+    <div className="max-w-md">
+      <ProgressBar value={job.progress} label={job.status === "queued" ? "Transcription queued" : (job.message ?? "Transcribing")} />
+    </div>
+  );
+}
 
 export function ProjectPage() {
   const { projectId = "" } = useParams();
   const [project, setProject] = useState<Project | null>(null);
+  const [config, setConfig] = useState<PublicConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const ingest = project?.jobs.find((j) => j.type === "ingest") ?? null;
-  const job = useJob(ingest && ingest.status !== "succeeded" ? ingest.id : null, ingest);
+  const ingest = useJob(project ? latest(project.jobs, "ingest") : null);
+  const transcribe = useJob(project ? latest(project.jobs, "transcribe") : null);
 
-  useEffect(() => {
+  const reload = () =>
     api
       .getProject(projectId)
       .then(setProject)
       .catch((err) => setLoadError(err.message));
+
+  useEffect(() => {
+    reload();
+    api.config().then(setConfig).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  // Refresh project metadata once its processing job finishes.
+  // Refresh once ingest finishes (metadata + the transcription job it queued).
   useEffect(() => {
-    if (job?.status === "succeeded" || job?.status === "failed") {
-      api.getProject(projectId).then(setProject).catch(() => {});
+    if (ingest && (ingest.status === "succeeded" || ingest.status === "failed") && project?.status !== "ready") {
+      reload();
     }
-  }, [job?.status, projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingest?.status]);
 
   if (loadError) {
     return (
@@ -40,11 +63,12 @@ export function ProjectPage() {
   }
   if (!project) return <p className="text-slate-500">Loading…</p>;
 
-  const failed = project.status === "failed" || job?.status === "failed";
+  const failed = project.status === "failed" || ingest?.status === "failed";
+  const ready = project.status === "ready";
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-8">
+      <div className="space-y-1">
         <h1 className="text-2xl font-semibold break-all">{project.filename}</h1>
         <p className="text-sm text-slate-500">
           {formatBytes(project.size_bytes)}
@@ -53,26 +77,34 @@ export function ProjectPage() {
           {" · expires "}
           {new Date(project.expires_at).toLocaleString()}
         </p>
+        {ready && <TranscriptStatus job={transcribe} hasAudio={project.has_audio} />}
       </div>
 
-      {project.status === "ready" ? (
-        <video
-          src={api.proxyUrl(project.id)}
-          controls
-          preload="metadata"
-          className="aspect-video w-full rounded-xl bg-black"
-        />
+      {ready ? (
+        <>
+          <video
+            src={api.proxyUrl(project.id)}
+            controls
+            preload="metadata"
+            className="aspect-video w-full max-w-3xl rounded-xl bg-black"
+          />
+          <SimpleClipsPanel
+            project={project}
+            minSeconds={config?.min_clip_seconds}
+            maxSeconds={config?.max_clip_seconds}
+          />
+        </>
       ) : failed ? (
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
           <p className="font-medium text-red-700">Processing failed</p>
-          <p className="text-sm text-slate-600">{job?.error ?? project.error}</p>
+          <p className="text-sm text-slate-600">{ingest?.error ?? project.error}</p>
           <Link to="/" className="text-indigo-600 hover:underline">
             Try another file
           </Link>
         </div>
       ) : (
         <div className="rounded-xl bg-white p-6 shadow-sm">
-          <ProgressBar value={job?.progress ?? 0} label={job?.message ?? "Waiting for a worker…"} />
+          <ProgressBar value={ingest?.progress ?? 0} label={ingest?.message ?? "Waiting for a worker…"} />
         </div>
       )}
     </div>

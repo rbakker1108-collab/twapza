@@ -3,7 +3,12 @@ import types
 from types import SimpleNamespace
 
 from twapza.transcription import Segment, Transcript, Word
-from twapza.transcription.faster_whisper import FasterWhisperTranscriber, _load_model
+import numpy as np
+import pytest
+
+from tests.conftest import requires_ffmpeg
+from twapza.media import ffmpeg
+from twapza.transcription.faster_whisper import FasterWhisperTranscriber, _load_model, load_wav_16k
 
 
 def sample() -> Transcript:
@@ -39,7 +44,8 @@ def test_faster_whisper_adapter(monkeypatch, tmp_path):
         def __init__(self, size, device, compute_type, download_root):
             calls["init"] = (size, device, compute_type, download_root)
 
-        def transcribe(self, path, **kwargs):
+        def transcribe(self, audio, **kwargs):
+            calls["audio"] = audio
             calls["kwargs"] = kwargs
             w = lambda word, s, e: SimpleNamespace(word=word, start=s, end=e, probability=0.87654)
             segs = [
@@ -50,6 +56,8 @@ def test_faster_whisper_adapter(monkeypatch, tmp_path):
 
     monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=StubModel))
     _load_model.cache_clear()
+    monkeypatch.setattr("twapza.transcription.faster_whisper.load_wav_16k",
+                        lambda path: np.zeros(16000, dtype=np.float32))
     progress = []
     t = FasterWhisperTranscriber("tiny", language="", download_root=tmp_path / "models").transcribe(
         tmp_path / "audio.wav", duration=4.2, on_progress=progress.append)
@@ -57,7 +65,51 @@ def test_faster_whisper_adapter(monkeypatch, tmp_path):
 
     assert calls["init"] == ("tiny", "cpu", "int8", str(tmp_path / "models"))
     assert calls["kwargs"] == {"language": None, "word_timestamps": True, "vad_filter": True}
+    # Decoded samples are passed in, not a path (faster-whisper's PyAV decoder is bypassed).
+    assert isinstance(calls["audio"], np.ndarray) and calls["audio"].dtype == np.float32
     assert t.language == "en" and t.duration == 4.2
     assert [s.text for s in t.segments] == ["Hi there.", "Bye"]
     assert t.words[1] == Word(" there.", 0.5, 1.9, 0.877)
     assert progress == [0.5, 1.0, 1.0]
+
+
+@requires_ffmpeg
+def test_load_wav_16k_reads_extracted_audio(tmp_path, sample_video):
+    wav = tmp_path / "audio.wav"
+    ffmpeg.extract_audio(sample_video, wav)
+    audio = load_wav_16k(wav, block_frames=4000)  # small blocks exercise the loop
+    assert audio.dtype == np.float32
+    assert len(audio) == pytest.approx(3 * 16000, abs=1600)
+    assert 0.1 < np.abs(audio).max() <= 1.0  # the 440 Hz test tone
+
+
+def test_load_wav_16k_rejects_other_formats(tmp_path):
+    import wave
+    path = tmp_path / "stereo.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(2), w.setsampwidth(2), w.setframerate(44100)
+        w.writeframes(b"\x00" * 400)
+    with pytest.raises(ValueError, match="16 kHz mono"):
+        load_wav_16k(path)
+
+
+def test_real_faster_whisper_skips_pyav_decoding_for_arrays(monkeypatch):
+    """Regression: faster-whisper's PyAV decoder breaks with PyAV >= 19
+    ("open() got an unexpected keyword argument 'metadata_errors'").
+
+    Calls the real ``WhisperModel.transcribe`` with the kind of array we pass and
+    fails if it ever reaches ``decode_audio``. Skipped if faster-whisper isn't installed.
+    """
+    fw = pytest.importorskip("faster_whisper.transcribe")
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("decode_audio (PyAV) must not be called")
+
+    monkeypatch.setattr(fw, "decode_audio", boom)
+    model = fw.WhisperModel.__new__(fw.WhisperModel)  # no weights needed
+    model.feature_extractor = SimpleNamespace(sampling_rate=16000)
+    model.model = SimpleNamespace(is_multilingual=True)
+    with pytest.raises(Exception) as excinfo:
+        model.transcribe(np.zeros(16000, dtype=np.float32), word_timestamps=True, vad_filter=True)
+    # It gets past audio decoding and only then fails on the missing model internals.
+    assert not isinstance(excinfo.value, AssertionError)

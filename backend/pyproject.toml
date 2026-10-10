@@ -1,0 +1,46 @@
+[project]
+name = "twapza"
+version = "0.1.0"
+description = "Twapza: repurpose your own long-form videos into short clips"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.4",
+    "sqlmodel>=0.0.22",
+    "rq>=2.0",
+    "redis>=5.0",
+    "anthropic>=1.13",
+    "numpy",
+]
+
+[project.optional-dependencies]
+whisper = [
+    "faster-whisper>=1.0",
+]
+# Scene-change detection for AI highlights (optional: highlights still work without it)
+scenes = [
+    "scenedetect>=0.6",
+]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "fakeredis>=2.24",
+    "numpy",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["twapza*"]
+
+[tool.setuptools.package-data]
+"twapza.captions" = ["fonts/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ffmpeg: tests that shell out to ffmpeg/ffprobe (skipped if not installed)",
+]

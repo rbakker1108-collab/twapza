@@ -5,9 +5,9 @@ import { CaptionOptions, DEFAULT_CAPTIONS } from "./CaptionOptions";
 
 export const DEFAULT_EXPORT: ExportSettings = {
   aspect: "9:16",
-  vertical_fit: "crop",
+  vertical_fit: "blur",
   upscale_1080: true,
-  captions: null,
+  captions: DEFAULT_CAPTIONS,
 };
 
 /** Shorter side of the source in pixels, or 0 if unknown. */
@@ -68,18 +68,24 @@ export function ExportOptions({ project, value, onChange, disabled }: Props) {
       </div>
 
       {vertical ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Choice
-            checked={value.vertical_fit === "crop"}
-            onSelect={() => set({ vertical_fit: "crop" })}
-            title="Crop to center"
-            hint="Fills the screen; best for one person talking"
-          />
+        <div className="grid gap-2 sm:grid-cols-3">
           <Choice
             checked={value.vertical_fit === "blur"}
             onSelect={() => set({ vertical_fit: "blur" })}
             title="Fit with blurred background"
-            hint="Nothing cut off; best for screens, slides or groups"
+            hint="Whole video visible, scaled to fit"
+          />
+          <Choice
+            checked={value.vertical_fit === "bars"}
+            onSelect={() => set({ vertical_fit: "bars" })}
+            title="Fit with black bars"
+            hint="Whole video visible on black"
+          />
+          <Choice
+            checked={value.vertical_fit === "crop"}
+            onSelect={() => set({ vertical_fit: "crop" })}
+            title="Crop to center"
+            hint="Fills the screen; cuts off the sides"
           />
         </div>
       ) : (
@@ -107,7 +113,7 @@ export function ExportOptions({ project, value, onChange, disabled }: Props) {
             checked={value.captions !== null}
             onChange={(e) => setCaptions(e.target.checked ? lastCaptions.current : null)}
           />
-          Burn in captions <span className="font-normal text-slate-500">(word-by-word highlight)</span>
+          Subtitles <span className="font-normal text-slate-500">(burned in, word-by-word highlight)</span>
         </label>
         {value.captions && (
           <CaptionOptions value={value.captions} onChange={setCaptions} vertical={vertical || !project.width || (project.height ?? 0) > project.width} />

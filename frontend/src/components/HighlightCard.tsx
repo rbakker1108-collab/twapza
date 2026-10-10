@@ -137,6 +137,16 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
           >
             {exporting ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Download"}
           </button>
+          {clip.text && (
+            <a
+              href={api.subtitlesUrl(clip.id)}
+              download
+              className="self-center px-1 text-sm text-indigo-700 hover:underline"
+              title="Subtitle file to upload to YouTube or TikTok"
+            >
+              Subtitles (.srt)
+            </a>
+          )}
         </div>
       </div>
     </article>

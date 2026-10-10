@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from twapza.api.routes import clips, jobs, projects, uploads
+from twapza.api.routes import clips, imports, jobs, projects, uploads
 from twapza.captions.style import FONTS_DIR
 from twapza.config import ALLOWED_EXTENSIONS, get_settings
 from twapza.db.session import init_db
@@ -22,6 +22,7 @@ async def lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="Twapza API", version="0.1.0", lifespan=lifespan)
     app.include_router(uploads.router)
+    app.include_router(imports.router)
     app.include_router(projects.router)
     app.include_router(jobs.router)
     app.include_router(clips.router)
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
             "max_clip_seconds": s.max_clip_seconds,
             "ai_enabled": bool(s.anthropic_api_key and s.anthropic_api_key.get_secret_value()),
             "claude_model": s.claude_model,
+            "youtube_enabled": s.youtube_enabled,
         }
 
     return app

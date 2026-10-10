@@ -37,7 +37,8 @@ export interface Clip {
 }
 
 export type Aspect = "original" | "9:16";
-export type VerticalFit = "crop" | "blur";
+/** blur = whole frame over a blurred copy, bars = whole frame on black, crop = fill (cuts the sides). */
+export type VerticalFit = "blur" | "bars" | "crop";
 
 export type CaptionFont = "montserrat" | "poppins" | "anton" | "bebas";
 
@@ -77,6 +78,8 @@ export interface Project {
   height: number | null;
   fps: number | null;
   has_audio: boolean | null;
+  /** The YouTube link this project was imported from (null for uploads). */
+  source_url: string | null;
   jobs: Job[];
 }
 
@@ -106,6 +109,7 @@ export interface PublicConfig {
   max_clip_seconds: number;
   ai_enabled: boolean;
   claude_model: string;
+  youtube_enabled: boolean;
 }
 
 export class ApiError extends Error {
@@ -157,6 +161,8 @@ export const api = {
     request<void>(`/api/uploads/${id}/chunks/${index}`, { method: "PUT", body, signal }),
   completeUpload: (id: string) =>
     request<{ project: Project; job: Job }>(`/api/uploads/${id}/complete`, { method: "POST" }),
+  importYoutube: (url: string, rights_confirmed: boolean) =>
+    request<{ project: Project; job: Job }>("/api/imports", json({ url, rights_confirmed })),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),
@@ -179,5 +185,6 @@ export const api = {
     request<Job>(`/api/clips/${clipId}/export`, json({ settings })),
   exportZip: (projectId: string, source: ClipSource, settings?: ExportSettings) =>
     request<Job>(`/api/projects/${projectId}/export-zip`, json({ source, settings })),
+  subtitlesUrl: (clipId: string) => `/api/clips/${clipId}/subtitles.srt`,
   jobEventsUrl: (id: string) => `/api/jobs/${id}/events`,
 };

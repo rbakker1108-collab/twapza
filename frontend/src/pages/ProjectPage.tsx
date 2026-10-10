@@ -4,8 +4,11 @@ import { Link, useParams } from "react-router-dom";
 import { api, type Job, type Project, type PublicConfig } from "../api/client";
 import { ProgressBar } from "../components/ProgressBar";
 import { ClipsWorkspace } from "../components/ClipsWorkspace";
+import { JobProgress } from "../components/JobProgress";
 import { useJob } from "../hooks/useJob";
 import { formatBytes, formatDuration } from "../lib/format";
+
+const isDone = (job: Job) => job.status === "succeeded" || job.status === "failed" || job.status === "canceled";
 
 const latest = (jobs: Job[], type: string) => [...jobs].reverse().find((j) => j.type === type) ?? null;
 
@@ -30,6 +33,7 @@ export function ProjectPage() {
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const importJob = useJob(project ? latest(project.jobs, "import") : null);
   const ingest = useJob(project ? latest(project.jobs, "ingest") : null);
   const transcribe = useJob(project ? latest(project.jobs, "transcribe") : null);
 
@@ -53,6 +57,12 @@ export function ProjectPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ingest?.status]);
 
+  // Refresh once a YouTube import finishes (title, size and the ingest job it queued).
+  useEffect(() => {
+    if (importJob && isDone(importJob) && !project?.jobs.some((j) => j.type === "ingest")) reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importJob?.status]);
+
   if (loadError) {
     return (
       <div className="mx-auto max-w-xl space-y-4">
@@ -65,7 +75,12 @@ export function ProjectPage() {
   }
   if (!project) return <p className="text-slate-500">Loading…</p>;
 
-  const failed = project.status === "failed" || ingest?.status === "failed";
+  const importing = !!importJob && !ingest && !isDone(importJob);
+  const failed =
+    project.status === "failed" || ingest?.status === "failed" ||
+    (!ingest && !!importJob && (importJob.status === "failed" || importJob.status === "canceled"));
+  const failure =
+    ingest?.error ?? (importJob?.status === "canceled" ? "Import was canceled." : importJob?.error) ?? project.error;
   const ready = project.status === "ready";
 
   return (
@@ -73,12 +88,19 @@ export function ProjectPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold break-all">{project.filename}</h1>
         <p className="text-sm text-slate-500">
-          {formatBytes(project.size_bytes)}
+          {project.size_bytes > 0 ? formatBytes(project.size_bytes) : project.source_url ? "YouTube import" : ""}
           {project.duration != null && ` · ${formatDuration(project.duration)}`}
           {project.width != null && ` · ${project.width}×${project.height}`}
           {" · expires "}
           {new Date(project.expires_at).toLocaleString()}
         </p>
+        {project.source_url && (
+          <p className="text-sm">
+            <a href={project.source_url} target="_blank" rel="noreferrer" className="text-indigo-700 hover:underline">
+              {project.source_url}
+            </a>
+          </p>
+        )}
         {ready && <TranscriptStatus job={transcribe} hasAudio={project.has_audio} />}
       </div>
 
@@ -94,11 +116,15 @@ export function ProjectPage() {
         </>
       ) : failed ? (
         <div className="space-y-3 rounded-xl bg-white p-6 shadow-sm">
-          <p className="font-medium text-red-700">Processing failed</p>
-          <p className="text-sm text-slate-600">{ingest?.error ?? project.error}</p>
+          <p className="font-medium text-red-700">{project.source_url && !ingest ? "Import failed" : "Processing failed"}</p>
+          <p className="text-sm text-slate-600">{failure}</p>
           <Link to="/" className="text-indigo-600 hover:underline">
-            Try another file
+            {project.source_url ? "Try again" : "Try another file"}
           </Link>
+        </div>
+      ) : importing && importJob ? (
+        <div className="rounded-xl bg-white p-6 shadow-sm">
+          <JobProgress job={importJob} fallbackLabel="Downloading from YouTube" />
         </div>
       ) : (
         <div className="rounded-xl bg-white p-6 shadow-sm">

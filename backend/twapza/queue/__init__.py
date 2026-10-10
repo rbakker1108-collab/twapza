@@ -86,7 +86,7 @@ def user_message(exc: BaseException) -> str:
         return "The server ran out of disk space. Delete some projects and try again."
     text = str(exc).strip()
     # Our own error types already carry readable messages.
-    if exc.__class__.__name__ in {"MediaError", "TaskError", "HighlightError", "StorageError"}:
+    if exc.__class__.__name__ in {"MediaError", "TaskError", "HighlightError", "StorageError", "ImportFailed"}:
         return text or "Processing failed."
     return f"Something went wrong: {text or exc.__class__.__name__}"
 
@@ -249,7 +249,7 @@ def reap_stale_jobs(connection, now: datetime | None = None) -> int:
             job.error = LOST_WORKER_MESSAGE
             job.finished_at = now
             session.add(job)
-            if job.type == JobType.INGEST:
+            if job.type in (JobType.INGEST, JobType.IMPORT):
                 project = session.get(Project, job.project_id)
                 if project is not None and project.status != ProjectStatus.READY:
                     project.status = ProjectStatus.FAILED

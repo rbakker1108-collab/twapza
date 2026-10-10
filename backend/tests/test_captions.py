@@ -184,3 +184,17 @@ def test_probe_reports_rotation(tmp_path):
     assert info.rotation in (90, 270) and info.display_size == (360, 640)
     assert ffmpeg.probe(src).display_size == (640, 360)
     assert re.match(r"\d", str(info.rotation))
+
+
+def test_srt_cues():
+    from twapza.captions.srt import build_srt, srt_time
+
+    assert srt_time(3725.5) == "01:02:05,500" and srt_time(-1) == "00:00:00,000"
+    words = [W(" Hello", 10.5, 10.9), W(" world.", 11.0, 11.6), W(" Next", 12.0, 12.3),
+             W(" one", 12.4, 12.8), W(" outside", 30, 31)]
+    srt = build_srt(words, clip_start=10, clip_end=20)
+    assert srt == (
+        "1\n00:00:00,500 --> 00:00:02,000\nHello world.\n\n"
+        "2\n00:00:02,000 --> 00:00:03,200\nNext one\n"
+    )
+    assert build_srt([], clip_start=0, clip_end=10) is None

@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     job_timeout_seconds: int = 6 * 60 * 60
     queue_name: str = "twapza"
 
+    # YouTube links
+    youtube_enabled: bool = True
+    youtube_max_height: int = 1080
+
     # Cleanup scheduler
     cleanup_interval_seconds: int = 15 * 60
 

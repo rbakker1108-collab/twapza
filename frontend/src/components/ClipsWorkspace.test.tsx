@@ -32,21 +32,23 @@ describe("ClipsWorkspace", () => {
     expect(screen.getByText("1 clip")).toBeVisible();
   });
 
-  it("defaults to vertical 9:16 crop and shares the format with both tabs", async () => {
+  it("defaults to vertical 9:16 showing the whole frame and shares the format with both tabs", async () => {
     render(<ClipsWorkspace project={makeProject()} config={makeConfig()} />);
     expect(screen.getByRole("radio", { name: /vertical 9:16/i })).toBeChecked();
-    expect(screen.getByRole("radio", { name: /crop to center/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /blurred background/i })).toBeChecked();
+    await userEvent.click(screen.getByRole("checkbox", { name: /subtitles/i })); // captions off
     await screen.findByText("Hot take");
     await zipIn(screen.getByText(/highlight, best first/).closest("section")!);
     await waitFor(() =>
-      expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", { aspect: "9:16", vertical_fit: "crop", upscale_1080: false, captions: null }),
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", { aspect: "9:16", vertical_fit: "blur", upscale_1080: false, captions: null }),
     );
 
-    await userEvent.click(screen.getByRole("radio", { name: /blurred background/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /black bars/i }));
+    expect(screen.getAllByTestId("clip-frame")[0]).toHaveClass("bg-black");
     await simpleTab();
     await zipIn(screen.getByText("1 clip").closest("section")!);
     await waitFor(() =>
-      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple", expect.objectContaining({ vertical_fit: "blur" })),
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple", expect.objectContaining({ vertical_fit: "bars" })),
     );
   });
 

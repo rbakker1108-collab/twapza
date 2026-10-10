@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 
 /** How the preview is framed: as uploaded, or approximating a 9:16 export. */
-export type PreviewFrame = "original" | "crop" | "blur";
+export type PreviewFrame = "original" | "crop" | "blur" | "bars";
 
 interface Props {
   src: string;
@@ -15,7 +15,8 @@ interface Props {
  * Plays only [start, end] of a longer video. The video isn't loaded until the
  * user clicks play, so a grid of many clips stays light. For vertical framing,
  * CSS mimics the export: `object-cover` = centre crop, `object-contain` over a
- * blurred copy of the thumbnail = fit with blurred background.
+ * blurred copy of the thumbnail = fit with blurred background, `object-contain` on
+ * black = fit with black bars.
  */
 export function ClipPlayer({ src, start, end, poster, frame = "original" }: Props) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -32,7 +33,7 @@ export function ClipPlayer({ src, start, end, poster, frame = "original" }: Prop
   return (
     <div
       data-testid="clip-frame"
-      className={`relative w-full overflow-hidden rounded-lg bg-slate-900 ${vertical ? "aspect-[9/16]" : "aspect-video"}`}
+      className={`relative w-full overflow-hidden rounded-lg ${frame === "bars" ? "bg-black" : "bg-slate-900"} ${vertical ? "aspect-[9/16]" : "aspect-video"}`}
     >
       {frame === "blur" && poster && (
         <img src={poster} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-80 blur-xl" />

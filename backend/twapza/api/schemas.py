@@ -7,6 +7,11 @@ from twapza.exports import ExportSettings
 from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
 
 
+class CreateImport(BaseModel):
+    url: str = Field(min_length=1, max_length=500)
+    rights_confirmed: bool
+
+
 class CreateUpload(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(gt=0)
@@ -55,6 +60,7 @@ class ProjectRead(BaseModel):
     height: int | None
     fps: float | None
     has_audio: bool | None
+    source_url: str | None = None
     jobs: list[JobRead] = []
 
     @classmethod

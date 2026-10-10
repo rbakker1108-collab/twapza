@@ -8,6 +8,7 @@ from twapza.api.routes.projects import get_project_or_404, serve_object
 from twapza.api.schemas import (
     ClipRead, ExportRequest, JobRead, SimpleClipsRequest, TrimRequest, ZipExportRequest,
 )
+from twapza.captions.srt import build_srt
 from twapza.config import Settings, get_settings
 from twapza.db.models import Clip, ClipSource, JobType, Project, ProjectStatus, new_id
 from twapza.db.session import get_session
@@ -135,6 +136,20 @@ def clip_thumbnail(
         project = get_project_or_404(session, clip.project_id)
         _render_thumbnail(storage, project, clip)
     return serve_object(storage, clip.thumbnail_key, "image/jpeg")
+
+
+@router.get("/clips/{clip_id}/subtitles.srt")
+def clip_subtitles(clip_id: str, session: Session = Depends(get_session)) -> Response:
+    """The clip's speech as an .srt subtitle file (times relative to the clip)."""
+    clip = _clip_or_404(session, clip_id)
+    project = _ready_project(session, clip.project_id)
+    transcript = load_transcript(project)
+    srt = build_srt(transcript.words, clip_start=clip.start, clip_end=clip.end) if transcript else None
+    if not srt:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "There is no speech in this clip.")
+    name = export_filename(project, clip).removesuffix(".mp4") + ".srt"
+    return Response(srt, media_type="application/x-subrip; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.post("/clips/{clip_id}/export", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED)

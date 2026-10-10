@@ -30,6 +30,7 @@ class JobType(StrEnum):
     EXPORT = "export"
     EXPORT_ZIP = "export_zip"
     AI_CLIPS = "ai_clips"
+    IMPORT = "import"
 
 
 class ClipSource(StrEnum):
@@ -61,6 +62,8 @@ class Project(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime = Field(index=True)
     error: str | None = None
+    # Set when the video was imported from a YouTube link
+    source_url: str | None = None
 
     # Filled in by the ingest job
     duration: float | None = None

@@ -153,13 +153,14 @@ def test_schema_v2_database_is_migrated_without_losing_data(isolated_env):
             "CREATE TABLE clip (id VARCHAR PRIMARY KEY, project_id VARCHAR, source VARCHAR, "
             "\"index\" INTEGER, start FLOAT, \"end\" FLOAT, text VARCHAR, title VARCHAR, "
             "hook VARCHAR, score FLOAT, reason VARCHAR, created_at DATETIME)"))
-        conn.execute(text("PRAGMA user_version = 2"))
     now = utcnow()
     with Session(engine) as s:
         s.add(Project(id="p", filename="a.mp4", ext="mp4", size_bytes=1, chunk_size=1, total_chunks=1,
                       rights_confirmed_at=now, expires_at=now))
         s.commit()
     with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE project DROP COLUMN source_url"))  # added in v4
+        conn.execute(text("PRAGMA user_version = 2"))
         conn.execute(text("INSERT INTO clip (id, project_id, source, \"index\", start, \"end\", text) "
                           "VALUES ('c', 'p', 'SIMPLE', 1, 0, 60, 'hi')"))
 
@@ -167,7 +168,8 @@ def test_schema_v2_database_is_migrated_without_losing_data(isolated_env):
     with Session(engine) as s:
         clip = s.get(Clip, "c")
         assert clip is not None and clip.source == ClipSource.SIMPLE and clip.suggested_start is None
-        assert s.get(Project, "p") is not None
+        project = s.get(Project, "p")
+        assert project is not None and project.source_url is None
     with engine.connect() as conn:
         assert conn.execute(text("PRAGMA user_version")).scalar() == SCHEMA_VERSION
 
@@ -186,3 +188,13 @@ def test_schema_version_mismatch_resets_temporary_data(isolated_env):
     assert not get_storage().exists("projects/old/original.mp4")
     with get_engine().connect() as conn:
         assert conn.execute(text("PRAGMA user_version")).scalar() == SCHEMA_VERSION
+
+
+def test_clip_subtitles_srt(client, ready_project):
+    clip = generate(client, ready_project["id"], 15)[0]
+    r = client.get(f"/api/clips/{clip['id']}/subtitles.srt")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/x-subrip")
+    assert '_simple01_' in r.headers["content-disposition"] and ".srt" in r.headers["content-disposition"]
+    first = r.text.split("\n\n")[0].splitlines()
+    assert first[0] == "1" and " --> " in first[1] and first[2].startswith("w1 w2")

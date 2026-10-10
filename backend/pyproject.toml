@@ -12,6 +12,9 @@ dependencies = [
     "redis>=5.0",
     "anthropic>=1.13",
     "numpy",
+    # YouTube link import. YouTube changes often: rebuild the image to pick up a newer yt-dlp.
+    "yt-dlp[default]>=2025.11",  # [default] adds yt-dlp-ejs (YouTube signature solving)
+    "deno>=2.0",                 # JavaScript runtime yt-dlp needs for YouTube
 ]
 
 [project.optional-dependencies]

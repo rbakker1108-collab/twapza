@@ -1,21 +1,22 @@
 # Twapza
 
-Turn your own long-form videos (podcasts, talks, streams, interviews) into short clips for
-YouTube Shorts, TikTok and Instagram Reels.
+Turn your long-form YouTube videos (podcasts, talks, streams, interviews) into viral
+YouTube Shorts (and TikTok / Instagram Reels). Paste a link to your video, or upload the file.
 
 - **AI highlights:** Claude reads the transcript and picks the strongest standalone moments
   (strong hooks, emotional peaks, surprises, humour, clear takeaways), refined with audio
   energy and scene changes, ranked by score. Trim any clip with a slider.
 - **Simple clips:** split the whole video into clips of ~N seconds (15–180), with every cut
   snapped to a natural pause or sentence end.
-- **Vertical 1080×1920** (centre crop, or fit over a blurred background) or the original shape,
-  with optional 1080p upscaling of low-resolution sources.
-- **Burned-in captions** with word-by-word highlighting: four bundled fonts, your colours,
-  size, position and words on screen.
+- **Vertical 1080×1920** showing the whole picture scaled to fit (over a blurred background or
+  black bars), or a centre crop, or the original shape with optional 1080p upscaling.
+- **Subtitles**, on by default: burned in with word-by-word highlighting (four bundled fonts,
+  your colours, size, position and words on screen), plus a `.srt` file per clip.
 - Download clips one by one or all at once as a ZIP.
 
-Twapza only works with videos **you upload yourself** (mp4, mov or mkv, up to 3 hours and
-20 GB). Before uploading you confirm that you own the video or have permission to use it.
+Twapza is for **your own** videos: paste a link to a single YouTube video you posted (public or
+unlisted), or upload a file (mp4, mov or mkv, up to 20 GB). Videos can be up to 3 hours long.
+Either way you first confirm that you own the video or have permission to use it.
 Your original file is never modified, and everything is deleted automatically after
 24 hours (or immediately, with **Delete** on the home page).
 
@@ -43,12 +44,15 @@ The first transcription downloads the Whisper model (`small`, ~500 MB) once.
 
 ## Using Twapza
 
-1. **Upload:** drop a video, tick the ownership box, click **Upload**. Large uploads can be
-   paused; choosing the same file again resumes where it stopped (even after a reload).
+1. **Paste a YouTube link** (e.g. `https://youtu.be/…`), tick the ownership box, click
+   **Import from YouTube**. Or switch to **Upload a file**: drop a video and click **Upload**
+   (large uploads can be paused; choosing the same file again resumes, even after a reload).
 2. Twapza builds a preview and **transcribes** the video in the background (progress is shown).
-3. Pick a **download format** (vertical crop / blurred fit / original; captions on or off).
+3. Pick a **download format**: vertical with blurred background (default), black bars or centre
+   crop, or the original shape; subtitles on (default) or off, and their style.
 4. **AI highlights** tab → **Find highlights** → review the ranked list, play, **Trim**,
-   **Download** (or **Download all (ZIP)**).
+   **Download** (or **Download all (ZIP)**). **Subtitles (.srt)** gives a subtitle file to
+   upload alongside the Short.
    **Simple clips** tab → choose a length → **Generate clips**.
 5. Long-running steps can be **canceled**. Your recent projects are listed on the home page.
 
@@ -66,6 +70,8 @@ All settings live in `.env` (see `.env.example` for every option). The most usef
 | `TWAPZA_MAX_UPLOAD_GB` | `20` | Largest upload. |
 | `TWAPZA_MAX_DURATION_MIN` | `180` | Longest video. |
 | `TWAPZA_RETENTION_HOURS` | `24` | How long projects are kept. |
+| `TWAPZA_YOUTUBE_ENABLED` | `true` | Show the "Paste a YouTube link" option. |
+| `TWAPZA_YOUTUBE_MAX_HEIGHT` | `1080` | Highest resolution downloaded from YouTube. |
 | `TWAPZA_MAX_HIGHLIGHTS` | `30` | Most AI highlights shown per video. |
 | `TWAPZA_EXPORT_PRESET` / `TWAPZA_EXPORT_CRF` | `veryfast` / `20` | Export speed/quality (x264). |
 
@@ -107,11 +113,20 @@ tested on GPU hardware yet; if it fails to start, the CPU setup above always wor
 | A job says "Twapza stopped while this was running" | The worker restarted mid-job; just run it again. |
 | "The server ran out of disk space" | Delete projects from the home page, or free space for Docker. |
 | Upload interrupted | Choose the same file again; it resumes. |
+| YouTube import fails ("blocking automated downloads", or a format error) | YouTube changes often. Update the downloader: `docker compose build --no-cache && docker compose up`. If it still fails, download the video from YouTube Studio and upload the file. |
+| "This video is private" / "requires sign-in" | Make the video public or unlisted for the import, or upload the file. |
 | See what's happening | `docker compose logs -f twapza-worker` |
+
+## About YouTube imports
+
+Importing uses [yt-dlp](https://github.com/yt-dlp/yt-dlp). Only import videos you own or have
+permission to use. YouTube's Terms of Service restrict downloading, so check they allow your use;
+downloading your own uploads from [YouTube Studio](https://studio.youtube.com) and using
+**Upload a file** is always an option.
 
 ## How it works
 
-React frontend → FastAPI API → Redis/RQ job queue → worker (ffmpeg, faster-whisper, Claude,
+React frontend → FastAPI API → Redis/RQ job queue → worker (yt-dlp, ffmpeg, faster-whisper, Claude,
 PySceneDetect, libass) → files on local disk, metadata in SQLite. A scheduler deletes expired
 projects and recovers jobs whose worker died. See [CLAUDE.md](CLAUDE.md) for the architecture,
 conventions and how to develop without Docker.

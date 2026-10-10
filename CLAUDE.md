@@ -1,15 +1,16 @@
 # CLAUDE.md: Twapza
 
-Twapza helps content creators repurpose **their own** long-form videos (mp4/mov/mkv,
-up to ~3 h) into short clips: simple fixed-length clipping snapped to sentence
-boundaries, and AI "highlight" clipping using a transcript + the Claude API.
+Twapza turns creators' **own** long-form YouTube videos (pasted YouTube link, or an uploaded
+mp4/mov/mkv, up to ~3 h) into viral vertical Shorts: AI "highlight" clipping using a
+transcript + the Claude API, and simple fixed-length clipping snapped to sentence boundaries.
 
 ## Product rules (do not violate)
 
-- Input is an **uploaded file only**. Never add downloading from YouTube or other platforms.
-- Uploads require the user to confirm they own / have permission to use the content
-  (`rights_confirmed: true`, enforced server-side in `api/routes/uploads.py`; the
-  confirmation time is stored as `Project.rights_confirmed_at`).
+- Input is an **uploaded file** or a **single YouTube video link** (imported with yt-dlp).
+  No other platforms, playlists, channels or live streams.
+- Both require the user to confirm they own / have permission to use the content
+  (`rights_confirmed: true`, enforced server-side in `api/routes/uploads.py` and
+  `api/routes/imports.py`; the confirmation time is stored as `Project.rights_confirmed_at`).
 - **Originals are never modified.** Every derived file (proxy, audio, clips) is a new object.
 - Everything a project stores is deleted after `TWAPZA_RETENTION_HOURS` (default 24).
 - Secrets (e.g. `ANTHROPIC_API_KEY`) come from the environment / `.env`. Never hardcode them.
@@ -51,6 +52,14 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   All of a project's files live under `Project.prefix` so cleanup is one `delete_prefix`.
 - **All media work goes through `media/ffmpeg.py`.** Clips are re-encoded (never
   stream-copied) so cuts land exactly on the snapped timestamps.
+- **YouTube import** (`importing/youtube.py`, `POST /api/imports`): the API validates the link
+  (`youtube_video_id`; only youtube.com / youtu.be video links) and stores the canonical URL as
+  `Project.source_url`; the `import` job (`workers.tasks.import_youtube`) looks up title/length
+  (rejects live streams and over-long videos before downloading), downloads ≤ `TWAPZA_YOUTUBE_MAX_HEIGHT`
+  as mp4 into `original.mp4`, then queues the normal ingest. yt-dlp errors become readable
+  `ImportFailed` messages (`_clean_error`). yt-dlp needs the `[default]` extra + Deno (both pip
+  deps) for YouTube; YouTube breaks yt-dlp regularly, so rebuild the image to update it.
+  Tests fake `fetch_info`/`download_video`; one test runs real yt-dlp against a local HTTP server.
 - **Uploads are chunked and resumable** (default 16 MB chunks): the server preallocates
   `<key>.part`, writes each chunk at its offset, and renames on `complete`.
   `UploadPart` rows track received chunks; re-sending a chunk is idempotent.
@@ -64,8 +73,8 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   plus `ExportSettings` (`exports.py`), so re-exporting an unchanged clip is instant and
   a trimmed clip renders a new file. `ExportSettings.normalized()` drops options that don't
   affect the output before hashing. `exports.video_filter()` picks the ffmpeg filter:
-  `aspect="9:16"` → `ffmpeg.vertical_filter(crop|blur)`, always 1080x1920 (centre crop, or
-  fit over a blurred copy); otherwise `upscale_1080` (default on) upscales
+  `aspect="9:16"` → `ffmpeg.vertical_filter(blur|bars|crop)`, always 1080x1920 (whole frame
+  scaled to fit over a blurred copy — the default —, whole frame on black bars, or centre crop); otherwise `upscale_1080` (default on) upscales
   sources whose short side is < 1080 px via `ffmpeg.upscale_filter` (lanczos + light
   sharpen; output size computed by ffmpeg so rotated phone videos stay correct). Jobs that produce a file store `result_key` /
   `result_name`; the browser downloads via `GET /api/jobs/{id}/download`.
@@ -78,6 +87,9 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   20% loudness score) → `dedupe` (greedy NMS on IoU/containment) → top `TWAPZA_MAX_HIGHLIGHTS`.
   Scene cuts are cached in `scenes.json`; scene detection failing never fails the job.
   Forced `tool_choice` is not allowed on Sonnet 5.5; keep using structured outputs.
+- **Subtitles**: captions are on by default in the UI (`DEFAULT_EXPORT`). Besides burning them in,
+  `GET /api/clips/{id}/subtitles.srt` returns a sidecar SRT (`captions/srt.py::build_srt`, same
+  word grouping as the ASS captions) for uploading to YouTube/TikTok.
 - **Captions** (`captions/`): `ExportSettings.captions` (`CaptionSettings`: font, colours,
   size, position, words per line, uppercase) → `captions/ass.py::build_ass` (pure: words in the
   clip range, rebased to 0, grouped into pages of N words broken at sentence ends/pauses; one
@@ -98,7 +110,7 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
 ```
 backend/twapza/
   config.py            Settings (pydantic-settings, TWAPZA_* env vars)
-  api/app.py           FastAPI app factory; api/routes/{uploads,projects,jobs,clips}.py
+  api/app.py           FastAPI app factory; api/routes/{uploads,imports,projects,jobs,clips}.py
   api/schemas.py       Response/request models (keep DB models out of responses)
   db/models.py         SQLModel tables: Project, UploadPart, Job, Clip
   db/session.py        Engine (SQLite WAL), init_db(), get_session dependency
@@ -112,7 +124,8 @@ backend/twapza/
   clipping/signals.py  audio energy profile/score, PySceneDetect scene cuts
   clipping/dedupe.py   pure: overlap metrics + greedy NMS
   clipping/highlights.py  ask_for_candidates() (concurrent chunks), refine(), build_highlights()
-  captions/            style.py (CaptionSettings, bundled FONTS), ass.py (pure ASS generation), fonts/
+  importing/youtube.py YouTube link parsing, yt-dlp info lookup + download (ImportFailed)
+  captions/            style.py (CaptionSettings, bundled FONTS), ass.py (pure ASS generation), srt.py, fonts/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
@@ -124,7 +137,8 @@ frontend/src/
   lib/jobs.ts          watchJob() over SSE, runAndDownload() for export jobs
   hooks/useJob.ts      SSE job subscription
   components/ClipPlayer.tsx  plays [start,end] of the proxy, loads lazily; CSS previews 9:16 framing
-  components/ExportOptions.tsx  download format picker (9:16 crop/blur, original, 1080p upscale)
+  components/ExportOptions.tsx  download format picker (9:16 blur/bars/crop, original, 1080p upscale, subtitles)
+  components/YoutubeImportForm.tsx  link + rights form (home page tab next to UploadForm)
   components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview
@@ -202,6 +216,8 @@ External services (Whisper, Claude) must be faked behind their protocols in test
    forward into Stage 2; face-tracked crop remains a later option.)
 5. ✅ Polish: cancellation, job watchdog, friendly errors, limits in the UI, resumable uploads,
    recent projects + delete, orphan cleanup, GPU compose override, README.
+6. ✅ YouTube Shorts focus: YouTube link import (yt-dlp), whole-frame 9:16 fit by default
+   (blur / black bars; crop optional), subtitles on by default + .srt download.
 
 Possible next steps: face-tracked vertical crop, editable caption text, hosted
 transcription backend, S3 storage backend, auth for multi-user hosting.

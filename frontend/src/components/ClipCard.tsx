@@ -56,6 +56,16 @@ export function ClipCard({ clip, proxyUrl, settings }: Props) {
       >
         {busy ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Download"}
       </button>
+      {clip.text && (
+        <a
+          href={api.subtitlesUrl(clip.id)}
+          download
+          className="text-center text-sm text-indigo-700 hover:underline"
+          title="Subtitle file to upload to YouTube or TikTok"
+        >
+          Subtitles (.srt)
+        </a>
+      )}
     </article>
   );
 }

@@ -18,8 +18,10 @@ def test_video_filter_selection():
     assert video_filter(ExportSettings(), 1920, 1080) is None
     assert video_filter(ExportSettings(upscale_1080=False), 1280, 720) is None
     v = ExportSettings(aspect="9:16")
-    assert video_filter(v, 1920, 1080) == ffmpeg.vertical_filter("crop")
-    assert video_filter(v.model_copy(update={"vertical_fit": "blur"}), 640, 360) == ffmpeg.vertical_filter("blur")
+    assert v.vertical_fit == "blur"  # default: show the whole frame
+    assert video_filter(v, 1920, 1080) == ffmpeg.vertical_filter("blur")
+    for fit in ("crop", "bars"):
+        assert video_filter(v.model_copy(update={"vertical_fit": fit}), 640, 360) == ffmpeg.vertical_filter(fit)
 
 
 def test_export_key_ignores_options_that_do_not_change_the_output():
@@ -27,12 +29,13 @@ def test_export_key_ignores_options_that_do_not_change_the_output():
     # upscale doesn't matter for vertical, vertical_fit doesn't matter for original
     assert export_key(c, ExportSettings(aspect="9:16", upscale_1080=True)) == \
         export_key(c, ExportSettings(aspect="9:16", upscale_1080=False))
-    assert export_key(c, ExportSettings(vertical_fit="blur")) == export_key(c, ExportSettings())
+    assert export_key(c, ExportSettings(vertical_fit="crop")) == export_key(c, ExportSettings())
     # but these do
     keys = {export_key(c, s) for s in (
         ExportSettings(), ExportSettings(upscale_1080=False),
-        ExportSettings(aspect="9:16"), ExportSettings(aspect="9:16", vertical_fit="blur"))}
-    assert len(keys) == 4
+        ExportSettings(aspect="9:16"), ExportSettings(aspect="9:16", vertical_fit="crop"),
+        ExportSettings(aspect="9:16", vertical_fit="bars"))}
+    assert len(keys) == 5
     assert export_key(clip(), ExportSettings()) != export_key(
         Clip(id="c1", project_id="p1", source=ClipSource.SIMPLE, index=3, start=61.2, end=90.0),
         ExportSettings())

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import tempfile
 import zipfile
 from collections.abc import Callable
@@ -18,11 +19,12 @@ from twapza.clipping.llm import ClaudeHighlighter, HighlightFinder, chunk_transc
 from twapza.clipping.signals import detect_scene_cuts, energy_from_wav
 from twapza.clipping.simple import plan_simple_clips
 from twapza.config import get_settings
-from twapza.db.models import Clip, ClipSource, Job, JobType, Project, ProjectStatus
+from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
 from twapza.db.session import get_engine
 from twapza.exports import (
     ExportSettings, export_filename, export_key, output_size, video_filter,
 )
+from twapza.importing import youtube
 from twapza.media import ffmpeg
 from twapza.queue import ProgressReporter, run_tracked
 from twapza.storage import get_storage
@@ -201,9 +203,50 @@ def _mark_project_failed(project_id: str, job_id: str) -> None:
         if project is None:
             return
         project.status = ProjectStatus.FAILED
-        project.error = (job.error if job else None) or "Processing failed"
+        if job is not None and job.status == JobStatus.CANCELED:
+            project.error = "Import was canceled."
+        else:
+            project.error = (job.error if job else None) or "Processing failed"
         session.add(project)
         session.commit()
+
+
+def safe_filename(title: str, ext: str = "mp4") -> str:
+    """A download/display filename from a video title."""
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", title)
+    name = re.sub(r"\s+", " ", name).strip(" .")[:120].strip() or "YouTube video"
+    return f"{name}.{ext}"
+
+
+def import_youtube(job_id: str, project_id: str, url: str) -> None:
+    """Download a YouTube video (the user confirmed the rights) as the original, then ingest."""
+
+    def body(progress: ProgressReporter) -> None:
+        settings = get_settings()
+        progress.update(0, "Looking up the video", force=True)
+        info = youtube.fetch_info(url)
+        if info.is_live:
+            raise TaskError("Live streams can't be imported. Wait until the stream has ended.")
+        if info.duration and info.duration > settings.max_duration_seconds:
+            raise TaskError(
+                f"Video is {info.duration / 60:.0f} min long; "
+                f"the limit is {settings.max_duration_min:.0f} min."
+            )
+        project = _set_project(project_id, filename=safe_filename(info.title), ext="mp4")
+        storage = get_storage()
+        with storage.write_path(project.original_key) as dst:
+            youtube.download_video(
+                url, dst, max_height=settings.youtube_max_height,
+                on_progress=progress.stage(2, 100, "Downloading from YouTube"),
+            )
+            size = dst.stat().st_size
+        _set_project(project_id, size_bytes=size, status=ProjectStatus.QUEUED)
+        with Session(get_engine()) as session:
+            jobqueue.enqueue_job(session, jobqueue.get_queue(), project_id=project_id,
+                                 job_type=JobType.INGEST, func=ingest_project)
+
+    if not run_tracked(job_id, body):
+        _mark_project_failed(project_id, job_id)
 
 
 def transcribe_project(job_id: str, project_id: str) -> None:

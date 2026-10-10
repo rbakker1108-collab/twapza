@@ -188,9 +188,10 @@ VERTICAL_SIZE = (1080, 1920)
 def vertical_filter(mode: str = "crop") -> str:
     """ffmpeg filter producing a 1080x1920 (9:16) frame for Shorts / TikTok / Reels.
 
-    ``crop``: take the largest centred 9:16 region and scale it to 1080x1920.
     ``blur``: fit the whole frame inside 1080x1920 over a blurred, zoomed copy of
-    itself (nothing is cut off; good for screen recordings and wide shots).
+    itself (nothing is cut off; the default).
+    ``bars``: fit the whole frame inside 1080x1920 with black bars above/below.
+    ``crop``: take the largest centred 9:16 region and scale it to 1080x1920.
     Expressions are evaluated on the decoded frames, so rotated phone videos work.
     """
     w, h = VERTICAL_SIZE
@@ -205,6 +206,9 @@ def vertical_filter(mode: str = "crop") -> str:
                 f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2"
                 f":flags=lanczos,setsar=1[fgo];"
                 f"[bgo][fgo]overlay=(W-w)/2:(H-h)/2")
+    if mode == "bars":
+        return (f"scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2"
+                f":flags=lanczos,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1")
     raise ValueError(f"unknown vertical mode: {mode!r}")
 
 

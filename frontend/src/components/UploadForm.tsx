@@ -1,15 +1,22 @@
 import { useRef, useState, type DragEvent, type FormEvent } from "react";
 
-import { formatBytes } from "../lib/format";
+import { formatBytes, formatDuration } from "../lib/format";
+import { browserVideoDuration } from "../lib/upload";
 import { ProgressBar } from "./ProgressBar";
 
 const DEFAULT_EXTENSIONS = ["mp4", "mov", "mkv"];
 
 interface Props {
   maxBytes?: number;
+  maxDurationSeconds?: number;
   allowedExtensions?: string[];
-  onUpload: (file: File, onProgress: (fraction: number) => void) => Promise<void>;
+  onUpload: (file: File, onProgress: (fraction: number) => void, signal: AbortSignal) => Promise<void>;
+  /** Reads a file's duration before uploading (null = unknown); injectable for tests. */
+  getDuration?: (file: File) => Promise<number | null>;
 }
+
+export const PAUSED_MESSAGE =
+  "Upload paused. Choose the same file again to continue where you left off.";
 
 export function validateFile(file: File, maxBytes: number | undefined, extensions: string[]): string | null {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -22,22 +29,39 @@ export function validateFile(file: File, maxBytes: number | undefined, extension
   return null;
 }
 
-export function UploadForm({ maxBytes, allowedExtensions = DEFAULT_EXTENSIONS, onUpload }: Props) {
+export function UploadForm({
+  maxBytes, maxDurationSeconds, allowedExtensions = DEFAULT_EXTENSIONS, onUpload,
+  getDuration = browserVideoDuration,
+}: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [rights, setRights] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [checking, setChecking] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const abort = useRef<AbortController | null>(null);
 
   const uploading = progress !== null;
-  const canSubmit = !!file && rights && !uploading;
+  const canSubmit = !!file && rights && !uploading && !checking;
 
-  function pick(next: File | undefined) {
+  async function pick(next: File | undefined) {
     if (!next) return;
     const problem = validateFile(next, maxBytes, allowedExtensions);
     setError(problem);
-    setFile(problem ? null : next);
+    setFile(null);
+    if (problem) return;
+    if (maxDurationSeconds) {
+      // Catch over-long videos before a long upload (the server checks again after upload).
+      setChecking(true);
+      const duration = await getDuration(next).catch(() => null);
+      setChecking(false);
+      if (duration && duration > maxDurationSeconds) {
+        setError(`This video is ${formatDuration(duration)} long. The limit is ${formatDuration(maxDurationSeconds)}.`);
+        return;
+      }
+    }
+    setFile(next);
   }
 
   function onDrop(e: DragEvent) {
@@ -51,11 +75,15 @@ export function UploadForm({ maxBytes, allowedExtensions = DEFAULT_EXTENSIONS, o
     if (!canSubmit || !file) return;
     setError(null);
     setProgress(0);
+    abort.current = new AbortController();
     try {
-      await onUpload(file, (f) => setProgress(f * 100));
+      await onUpload(file, (f) => setProgress(f * 100), abort.current.signal);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.");
+      const paused = abort.current?.signal.aborted;
+      setError(paused ? PAUSED_MESSAGE : err instanceof Error ? err.message : "Upload failed.");
       setProgress(null);
+    } finally {
+      abort.current = null;
     }
   }
 
@@ -92,6 +120,7 @@ export function UploadForm({ maxBytes, allowedExtensions = DEFAULT_EXTENSIONS, o
             <p className="text-sm text-slate-500">
               {allowedExtensions.map((e) => e.toUpperCase()).join(", ")}
               {maxBytes ? ` · up to ${formatBytes(maxBytes)}` : ""}
+              {maxDurationSeconds ? ` · up to ${Math.round(maxDurationSeconds / 60)} minutes` : ""}
             </p>
           </>
         )}
@@ -114,7 +143,22 @@ export function UploadForm({ maxBytes, allowedExtensions = DEFAULT_EXTENSIONS, o
         </p>
       )}
 
-      {uploading && <ProgressBar value={progress} label="Uploading" />}
+      {checking && <p className="text-sm text-slate-500">Checking video length…</p>}
+
+      {uploading && (
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <ProgressBar value={progress} label="Uploading" />
+          </div>
+          <button
+            type="button"
+            onClick={() => abort.current?.abort()}
+            className="rounded-lg px-3 py-1 text-sm text-slate-600 hover:bg-slate-100"
+          >
+            Pause
+          </button>
+        </div>
+      )}
 
       <button
         type="submit"

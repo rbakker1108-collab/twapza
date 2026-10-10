@@ -1,0 +1,26 @@
+# Optional: transcribe on an NVIDIA GPU (much faster than CPU).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# Needs an NVIDIA GPU, a recent driver and the NVIDIA Container Toolkit
+# (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/).
+# Only the worker changes; everything else is identical to the CPU setup.
+services:
+  twapza-worker:
+    build:
+      context: ./backend
+      args:
+        WHISPER_GPU: "1"
+    image: twapza-backend-gpu
+    environment:
+      TWAPZA_WHISPER_DEVICE: cuda
+      TWAPZA_WHISPER_COMPUTE_TYPE: float16
+      # CUDA libraries installed by pip (nvidia-cublas-cu12, nvidia-cudnn-cu12)
+      LD_LIBRARY_PATH: /usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

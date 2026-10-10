@@ -42,10 +42,11 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCELED = "canceled"
 
     @property
     def is_terminal(self) -> bool:
-        return self in (JobStatus.SUCCEEDED, JobStatus.FAILED)
+        return self in (JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELED)
 
 
 class Project(SQLModel, table=True):

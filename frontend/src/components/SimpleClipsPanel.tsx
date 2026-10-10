@@ -4,7 +4,7 @@ import { api, type Clip, type ExportSettings, type Job, type Project } from "../
 import { isFinished, watchJob } from "../lib/jobs";
 import { ClipCard } from "./ClipCard";
 import { DownloadAllButton } from "./DownloadAllButton";
-import { ProgressBar } from "./ProgressBar";
+import { JobProgress } from "./JobProgress";
 
 interface Props {
   project: Project;
@@ -90,9 +90,7 @@ export function SimpleClipsPanel({ project, settings, minSeconds = 15, maxSecond
             {clips.length ? "Regenerate clips" : "Generate clips"}
           </button>
         </div>
-        {generating && (
-          <ProgressBar value={genJob?.progress ?? 0} label={genJob?.message ?? "Waiting for a worker…"} />
-        )}
+        {generating && genJob && <JobProgress job={genJob} />}
         {error && (
           <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}

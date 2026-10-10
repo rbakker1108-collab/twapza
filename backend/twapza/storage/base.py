@@ -49,6 +49,10 @@ class Storage(Protocol):
 
     def delete_prefix(self, prefix: str) -> None: ...
 
+    def list_children(self, prefix: str) -> list[tuple[str, float]]:
+        """Immediate children under ``prefix`` as (name, last-modified epoch seconds)."""
+        ...
+
     def local_file(self, key: str) -> Path | None:
         """Real filesystem path if the backend has one (used for FileResponse)."""
         ...

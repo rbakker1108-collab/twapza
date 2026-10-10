@@ -1,5 +1,5 @@
 export type ProjectStatus = "uploading" | "queued" | "processing" | "ready" | "failed";
-export type JobStatus = "queued" | "running" | "succeeded" | "failed";
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
 export interface Job {
   id: string;
@@ -80,6 +80,16 @@ export interface Project {
   jobs: Job[];
 }
 
+export interface ProjectSummary {
+  id: string;
+  filename: string;
+  status: ProjectStatus;
+  created_at: string;
+  expires_at: string;
+  duration: number | null;
+  clip_count: number;
+}
+
 export interface UploadSession {
   project_id: string;
   chunk_size: number;
@@ -107,8 +117,16 @@ export class ApiError extends Error {
   }
 }
 
+export const NETWORK_ERROR = "Can't reach the Twapza server. Is it still running?";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  let res: Response;
+  try {
+    res = await fetch(path, init);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, NETWORK_ERROR);
+  }
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -140,6 +158,9 @@ export const api = {
   completeUpload: (id: string) =>
     request<{ project: Project; job: Job }>(`/api/uploads/${id}/complete`, { method: "POST" }),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
+  listProjects: () => request<ProjectSummary[]>("/api/projects"),
+  deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),
+  cancelJob: (id: string) => request<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   proxyUrl: (id: string) => `/api/projects/${id}/proxy`,
   getJob: (id: string) => request<Job>(`/api/jobs/${id}`),
   createSimpleClips: (projectId: string, target_seconds: number) =>

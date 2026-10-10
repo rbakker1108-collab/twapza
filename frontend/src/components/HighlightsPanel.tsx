@@ -4,7 +4,7 @@ import { api, type Clip, type ExportSettings, type Job, type Project } from "../
 import { isFinished, watchJob } from "../lib/jobs";
 import { DownloadAllButton } from "./DownloadAllButton";
 import { HighlightCard } from "./HighlightCard";
-import { ProgressBar } from "./ProgressBar";
+import { JobProgress } from "./JobProgress";
 
 interface Props {
   project: Project;
@@ -73,7 +73,7 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
           </div>
         )}
 
-        {running && <ProgressBar value={job?.progress ?? 0} label={job?.message ?? "Waiting for a worker…"} />}
+        {running && job && <JobProgress job={job} />}
         {error && (
           <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}

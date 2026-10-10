@@ -28,9 +28,16 @@ export function DownloadAllButton({ projectId, source, settings, disabled, onErr
 
   return (
     <div className="flex items-center gap-3">
-      {busy && (
-        <span className="text-sm text-slate-600">
-          {job?.message ?? "Preparing"} · {Math.round(job?.progress ?? 0)}%
+      {busy && job && (
+        <span className="flex items-center gap-2 text-sm text-slate-600">
+          {job.message ?? "Preparing"} · {Math.round(job.progress)}%
+          <button
+            type="button"
+            onClick={() => api.cancelJob(job.id).catch(() => {})}
+            className="rounded px-2 py-0.5 hover:bg-slate-100 hover:text-slate-900"
+          >
+            Cancel
+          </button>
         </span>
       )}
       <button

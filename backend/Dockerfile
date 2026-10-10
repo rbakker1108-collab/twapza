@@ -13,6 +13,12 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY twapza ./twapza
 RUN pip install ".[dev,whisper,scenes]"
+
+# Optional NVIDIA GPU support for faster-whisper (see docker-compose.gpu.yml).
+ARG WHISPER_GPU=0
+RUN if [ "$WHISPER_GPU" = "1" ]; then \
+        pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"; \
+    fi
 COPY tests ./tests
 
 RUN useradd --create-home --uid 1000 twapza && mkdir -p /data && chown twapza /data

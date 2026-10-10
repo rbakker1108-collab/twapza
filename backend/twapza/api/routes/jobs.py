@@ -3,12 +3,14 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, StreamingResponse
+from rq import Queue
 from sqlmodel import Session
 
 from twapza.api.schemas import JobRead
 from twapza.api.routes.projects import serve_object
-from twapza.db.models import Job, JobStatus
+from twapza.db.models import Job, JobStatus, JobType
 from twapza.db.session import get_engine, get_session
+from twapza.queue import cancel_job, get_queue
 from twapza.storage import Storage, get_storage
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -29,6 +31,21 @@ def get_job(job_id: str, session: Session = Depends(get_session)) -> JobRead:
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found.")
     return JobRead.of(job)
+
+
+@router.post("/{job_id}/cancel", response_model=JobRead)
+def cancel(job_id: str, session: Session = Depends(get_session),
+           queue: Queue = Depends(get_queue)) -> JobRead:
+    """Stop a queued or running job. It stops at its next progress update."""
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found.")
+    if job.type == JobType.INGEST:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Processing an upload can't be canceled; delete the project instead.")
+    if job.status.is_terminal:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This job has already finished.")
+    return JobRead.of(cancel_job(session, job, queue))
 
 
 @router.get("/{job_id}/download")

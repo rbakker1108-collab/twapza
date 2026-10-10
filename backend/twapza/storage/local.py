@@ -93,6 +93,18 @@ class LocalStorage:
         elif path.is_file():
             path.unlink(missing_ok=True)
 
+    def list_children(self, prefix: str) -> list[tuple[str, float]]:
+        path = self._path(prefix.rstrip("/"))
+        if not path.is_dir():
+            return []
+        out = []
+        for child in path.iterdir():
+            try:
+                out.append((child.name, child.stat().st_mtime))
+            except FileNotFoundError:  # deleted meanwhile
+                continue
+        return out
+
     def local_file(self, key: str) -> Path | None:
         path = self._path(key)
         return path if path.is_file() else None

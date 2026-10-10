@@ -28,27 +28,28 @@ def ask_for_candidates(
     """Send every chunk to the model (a few at a time) and parse the answers."""
     results: list[Candidate] = []
     done = 0
-    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-        futures = {
-            pool.submit(finder.find, chunk, video_title=video_title,
-                        video_duration=video_duration, total_chunks=len(chunks)): chunk
-            for chunk in chunks
-        }
-        try:
-            for future in as_completed(futures):
-                chunk = futures[future]
-                raw = future.result()  # HighlightError propagates to the job
-                parsed = parse_highlights(raw, chunk_start=chunk.start, chunk_end=chunk.end,
-                                          min_len=min_len, max_len=max_len)
-                log.info("chunk %s: %d candidate(s)", chunk.index, len(parsed))
-                results.extend(parsed)
-                done += 1
-                if on_progress:
-                    on_progress(done / len(chunks))
-        except BaseException:
-            for f in futures:
-                f.cancel()
-            raise
+    pool = ThreadPoolExecutor(max_workers=max(1, concurrency))
+    futures = {
+        pool.submit(finder.find, chunk, video_title=video_title,
+                    video_duration=video_duration, total_chunks=len(chunks)): chunk
+        for chunk in chunks
+    }
+    try:
+        for future in as_completed(futures):
+            chunk = futures[future]
+            raw = future.result()  # HighlightError propagates to the job
+            parsed = parse_highlights(raw, chunk_start=chunk.start, chunk_end=chunk.end,
+                                      min_len=min_len, max_len=max_len)
+            log.info("chunk %s: %d candidate(s)", chunk.index, len(parsed))
+            results.extend(parsed)
+            done += 1
+            if on_progress:
+                on_progress(done / len(chunks))  # raises JobCanceled if the user canceled
+    except BaseException:
+        # Error or cancel: don't start the remaining chunks, and don't wait for those in flight.
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
     return results
 
 

@@ -31,8 +31,19 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   only transport. Workers write progress through `queue.ProgressReporter` (throttled);
   `GET /api/jobs/{id}/events` streams changes as Server-Sent Events by watching the row.
 - **Task failures are recorded, not raised**: `queue.run_tracked()` marks the job
-  failed with a user-facing message. Raise exceptions with messages a user can read
-  (e.g. `MediaError("Video is 200 min long; the limit is 180 min.")`).
+  failed with a user-facing message (`queue.user_message`). Raise our own error types
+  (`MediaError`, `TaskError`, `HighlightError`) with messages a user can read
+  (e.g. `MediaError("Video is 200 min long; the limit is 180 min.")`); anything else is
+  shown as "Something went wrong: …".
+- **Cancellation is cooperative**: `POST /api/jobs/{id}/cancel` sets the row to `canceled`;
+  `ProgressReporter.update` raises `JobCanceled` at the job's next progress write, so long
+  work must report progress regularly. `run_ffmpeg` kills ffmpeg when its callback raises;
+  `ask_for_candidates` stops scheduling Claude calls. Ingest can't be canceled (delete the
+  project instead). A deleted job/project also stops work.
+- **Job watchdog**: the scheduler runs `queue.reap_stale_jobs` every minute: jobs missing
+  from Redis, failed in RQ, or whose RQ heartbeat stopped are marked failed (worker crash or
+  restart). Cleanup (`cleanup.run_maintenance`) deletes expired projects and orphaned project
+  folders every `TWAPZA_CLEANUP_INTERVAL_SECONDS`.
 - **Storage is key-based** (`projects/<id>/original.<ext>`, `proxy.mp4`, `audio.wav`, …).
   Code must go through the `Storage` protocol (`storage/base.py`), never raw paths.
   ffmpeg needs real files, so use `storage.read_path(key)` / `storage.write_path(key)`
@@ -105,11 +116,11 @@ backend/twapza/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
-  cleanup.py           retention cleanup; `python -m twapza.cleanup [--once]`
+  cleanup.py           expiry + orphan sweep + job watchdog loop; `python -m twapza.cleanup [--once]`
 backend/tests/         pytest (unit + ffmpeg integration on synthetic media)
 frontend/src/
   api/client.ts        typed API client
-  lib/upload.ts        chunked upload with retry/resume
+  lib/upload.ts        chunked upload with retry; resumes across reloads (localStorage key per file)
   lib/jobs.ts          watchJob() over SSE, runAndDownload() for export jobs
   hooks/useJob.ts      SSE job subscription
   components/ClipPlayer.tsx  plays [start,end] of the proxy, loads lazily; CSS previews 9:16 framing
@@ -117,6 +128,7 @@ frontend/src/
   components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview
+  components/JobProgress.tsx  progress bar + Cancel; RecentProjects.tsx  home page list + delete
   components/, pages/  UI (Tailwind)
 ```
 
@@ -134,8 +146,7 @@ and register it in `transcription/get_transcriber()` (selected by `TWAPZA_TRANSC
 - API errors: `HTTPException` with a human-readable `detail` string.
 - Cached singletons (`get_settings`, `get_engine`, `get_storage`, `get_redis`) are
   `lru_cache`d; tests reset them in `tests/conftest.py`.
-- No schema migrations yet: tables are created with `SQLModel.metadata.create_all`.
-  Add Alembic before the schema needs to change on a deployed instance.
+- Schema changes go through `SCHEMA_VERSION` + `MIGRATIONS` in `db/session.py` (see above).
 - Frontend: function components + hooks, Tailwind utility classes, no global state
   library. Keep API types in `api/client.ts` in sync with `api/schemas.py`.
 - Naming: the app is **Twapza**; lowercase `twapza` for packages, services, env prefixes.
@@ -150,7 +161,8 @@ docker compose up --build   # UI: http://localhost:8080 · API docs: http://loca
 ```
 
 One worker processes jobs one at a time. For parallel exports/transcriptions:
-`docker compose up --scale twapza-worker=2`.
+`docker compose up --scale twapza-worker=2`. GPU transcription (untested on real hardware):
+`docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build`.
 
 Without Docker (needs Python 3.11+, Node 22, ffmpeg, redis-server):
 
@@ -188,4 +200,8 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 3. ✅ AI highlights (Claude), audio-energy/scene refinement, de-duplication, ranked list + trim UI.
 4. ✅ Burned-in word-highlight captions (ASS). (9:16 centre crop + blurred-fit was pulled
    forward into Stage 2; face-tracked crop remains a later option.)
-5. Polish: error handling, limits, cleanup verification, README, GPU profile.
+5. ✅ Polish: cancellation, job watchdog, friendly errors, limits in the UI, resumable uploads,
+   recent projects + delete, orphan cleanup, GPU compose override, README.
+
+Possible next steps: face-tracked vertical crop, editable caption text, hosted
+transcription backend, S3 storage backend, auth for multi-user hosting.

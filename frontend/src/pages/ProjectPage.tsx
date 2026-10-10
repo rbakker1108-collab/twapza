@@ -13,6 +13,8 @@ function TranscriptStatus({ job, hasAudio }: { job: Job | null; hasAudio: boolea
   if (hasAudio === false) return <p className="text-sm text-slate-500">No audio track: clips will be cut at exact intervals.</p>;
   if (!job) return null;
   if (job.status === "succeeded") return <p className="text-sm text-emerald-700">✓ Transcript ready</p>;
+  if (job.status === "canceled")
+    return <p className="text-sm text-slate-500">Transcription was canceled. It will run again when you generate clips.</p>;
   if (job.status === "failed")
     return <p className="text-sm text-red-700">Transcription failed: {job.error}. Generating clips will retry it.</p>;
   return (

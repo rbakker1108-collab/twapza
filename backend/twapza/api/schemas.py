@@ -64,6 +64,16 @@ class ProjectRead(BaseModel):
         return data
 
 
+class ProjectSummary(BaseModel):
+    id: str
+    filename: str
+    status: ProjectStatus
+    created_at: datetime
+    expires_at: datetime
+    duration: float | None
+    clip_count: int
+
+
 class CompleteUploadResponse(BaseModel):
     project: ProjectRead
     job: JobRead

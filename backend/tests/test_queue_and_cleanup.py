@@ -63,7 +63,7 @@ def test_run_tracked_failure_is_recorded_not_raised():
     assert run_tracked(job_id, body) is False
     job = load_job(job_id)
     assert job.status == JobStatus.FAILED
-    assert job.error == "bad things"
+    assert job.error == "Something went wrong: bad things"
 
 
 def test_stage_maps_fraction_to_range():

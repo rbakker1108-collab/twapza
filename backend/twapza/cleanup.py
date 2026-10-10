@@ -47,18 +47,60 @@ def cleanup_expired(now: datetime | None = None) -> int:
     return removed
 
 
+ORPHAN_GRACE_SECONDS = 3600
+
+
+def sweep_orphans(now: datetime | None = None) -> int:
+    """Delete project folders that have no database row (e.g. after a crash or reset).
+
+    Only folders untouched for an hour are removed, so an upload being created
+    right now is never affected. Returns how many folders were removed.
+    """
+    now = now or utcnow()
+    storage = get_storage()
+    with Session(get_engine()) as session:
+        known = set(session.exec(select(Project.id)).all())
+    removed = 0
+    for name, mtime in storage.list_children("projects/"):
+        if name in known or now.timestamp() - mtime < ORPHAN_GRACE_SECONDS:
+            continue
+        storage.delete_prefix(f"projects/{name}/")
+        removed += 1
+    if removed:
+        log.info("cleanup removed %d orphaned project folder(s)", removed)
+    return removed
+
+
+def run_maintenance(now: datetime | None = None) -> None:
+    """One cleanup pass: expired projects, orphaned files."""
+    cleanup_expired(now)
+    sweep_orphans(now)
+
+
+REAP_INTERVAL_SECONDS = 60
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Twapza retention cleanup")
+    parser = argparse.ArgumentParser(description="Twapza retention cleanup and job watchdog")
     parser.add_argument("--once", action="store_true", help="run a single pass and exit")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     init_db()
+    from twapza.queue import get_redis, reap_stale_jobs
+
     interval = get_settings().cleanup_interval_seconds
+    last_cleanup = 0.0
     while True:
-        cleanup_expired()
+        try:
+            reap_stale_jobs(get_redis())
+        except Exception:  # noqa: BLE001 - Redis briefly unavailable etc.; try again next loop
+            log.exception("job watchdog failed")
+        if args.once or time.monotonic() - last_cleanup >= interval:
+            run_maintenance()
+            last_cleanup = time.monotonic()
         if args.once:
             return
-        time.sleep(interval)
+        time.sleep(REAP_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

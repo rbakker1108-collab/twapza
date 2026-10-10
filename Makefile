@@ -1,7 +1,10 @@
-.PHONY: up down logs test test-backend test-frontend test-docker dev-api dev-worker dev-web
+.PHONY: up up-gpu down logs test test-backend test-frontend test-docker dev-api dev-worker dev-web
 
 up:            ## build and start everything (http://localhost:8080)
 	docker compose up --build -d
+
+up-gpu:        ## same, with GPU transcription (needs NVIDIA Container Toolkit)
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 
 down:
 	docker compose down

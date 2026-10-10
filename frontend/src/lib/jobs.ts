@@ -1,7 +1,7 @@
 import { api, type Job } from "../api/client";
 
 export const isFinished = (job: Job | null | undefined) =>
-  job?.status === "succeeded" || job?.status === "failed";
+  job?.status === "succeeded" || job?.status === "failed" || job?.status === "canceled";
 
 /** Follow a job over SSE until it finishes. Resolves with the final job state. */
 export function watchJob(jobId: string, onUpdate?: (job: Job) => void): Promise<Job> {
@@ -38,6 +38,7 @@ export async function runAndDownload(start: () => Promise<Job>, onUpdate?: (job:
   onUpdate?.(job);
   if (!isFinished(job)) job = await watchJob(job.id, onUpdate);
   if (job.status === "failed") throw new Error(job.error ?? "Export failed.");
+  if (job.status === "canceled") return job;
   if (job.download_url) triggerDownload(job.download_url);
   return job;
 }

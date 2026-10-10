@@ -5,17 +5,20 @@ only the transport that gets work to a worker. The API streams progress to the
 browser by watching the ``Job`` row (see ``api/routes/jobs.py``).
 """
 
+import errno
 import logging
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from redis import Redis
 from rq import Queue
-from sqlmodel import Session
+from rq.job import Job as RQJob
+from sqlmodel import Session, select
 
 from twapza.config import get_settings
-from twapza.db.models import Job, JobStatus, JobType, utcnow
+from twapza.db.models import Job, JobStatus, JobType, Project, ProjectStatus, utcnow
 from twapza.db.session import get_engine
 
 log = logging.getLogger(__name__)
@@ -73,11 +76,28 @@ def completed_job(
     return job
 
 
+class JobCanceled(Exception):
+    """Raised inside a running job when the user has canceled it."""
+
+
+def user_message(exc: BaseException) -> str:
+    """A message for the person using Twapza, from any exception a job raised."""
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        return "The server ran out of disk space. Delete some projects and try again."
+    text = str(exc).strip()
+    # Our own error types already carry readable messages.
+    if exc.__class__.__name__ in {"MediaError", "TaskError", "HighlightError", "StorageError"}:
+        return text or "Processing failed."
+    return f"Something went wrong: {text or exc.__class__.__name__}"
+
+
 class ProgressReporter:
     """Writes job progress to the database, throttled to avoid write storms.
 
     Progress is expressed in percent (0-100). ``stage(start, end)`` returns a
     callback mapping a sub-task's 0..1 fraction onto ``[start, end]`` percent.
+    Every write also checks whether the job was canceled and, if so, raises
+    ``JobCanceled`` so the work stops at the next progress update.
     """
 
     def __init__(self, job_id: str, min_interval: float = 0.5):
@@ -97,8 +117,9 @@ class ProgressReporter:
             return
         with Session(get_engine()) as session:
             job = session.get(Job, self.job_id)
-            if job is None:
-                return
+            # Deleted (its project was deleted) or canceled: stop working on it.
+            if job is None or job.status == JobStatus.CANCELED:
+                raise JobCanceled()
             job.progress = progress
             if message is not None:
                 job.message = message
@@ -118,12 +139,16 @@ def run_tracked(job_id: str, body: Callable[[ProgressReporter], None]) -> bool:
     """Run ``body`` with job bookkeeping. Returns True on success.
 
     Failures are recorded on the Job row (with a user-facing message) rather
-    than re-raised, so the database stays the single source of truth.
+    than re-raised, so the database stays the single source of truth. A job
+    canceled before it starts is skipped; one canceled while running stops at
+    its next progress update and stays ``canceled``.
     """
     with Session(get_engine()) as session:
         job = session.get(Job, job_id)
         if job is None:
             log.warning("job %s vanished before it started", job_id)
+            return False
+        if job.status == JobStatus.CANCELED:
             return False
         job.status = JobStatus.RUNNING
         job.started_at = utcnow()
@@ -132,18 +157,25 @@ def run_tracked(job_id: str, body: Callable[[ProgressReporter], None]) -> bool:
 
     reporter = ProgressReporter(job_id)
     error: str | None = None
+    canceled = False
     try:
         body(reporter)
+    except JobCanceled:
+        canceled = True
+        log.info("job %s canceled", job_id)
     except Exception as exc:  # noqa: BLE001 - we record every failure
         log.exception("job %s failed", job_id)
-        error = str(exc) or exc.__class__.__name__
+        error = user_message(exc)
 
     with Session(get_engine()) as session:
         job = session.get(Job, job_id)
         if job is None:
             return False
         job.finished_at = utcnow()
-        if error is None:
+        if canceled or job.status == JobStatus.CANCELED:
+            job.status = JobStatus.CANCELED
+            job.message = "Canceled"
+        elif error is None:
             job.status = JobStatus.SUCCEEDED
             job.progress = 100.0
             job.message = "Done"
@@ -152,4 +184,79 @@ def run_tracked(job_id: str, body: Callable[[ProgressReporter], None]) -> bool:
             job.error = error
         session.add(job)
         session.commit()
-    return error is None
+        return job.status == JobStatus.SUCCEEDED
+
+
+def cancel_job(session: Session, job: Job, queue: Queue | None = None) -> Job:
+    """Mark a job canceled; a queued job is also removed from the RQ queue."""
+    if job.status.is_terminal:
+        return job
+    job.status = JobStatus.CANCELED
+    job.message = "Canceled"
+    job.finished_at = utcnow()
+    session.add(job)
+    session.commit()
+    if queue is not None:
+        try:
+            RQJob.fetch(job.id, connection=queue.connection).cancel()
+        except Exception:  # noqa: BLE001 - already running/finished: the status check stops it
+            pass
+    session.refresh(job)
+    return job
+
+
+STALE_HEARTBEAT_SECONDS = 180
+MISSING_GRACE_SECONDS = 120
+LOST_WORKER_MESSAGE = "Twapza stopped while this was running (for example after a restart). Please try again."
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+def reap_stale_jobs(connection, now: datetime | None = None) -> int:
+    """Fail jobs whose worker died or that vanished from Redis. Returns how many.
+
+    - not in Redis any more (e.g. Redis restarted) and older than a grace period
+    - RQ says failed / stopped / canceled (worker crash, timeout)
+    - RQ says started but the job's heartbeat stopped (worker killed)
+    """
+    from rq.exceptions import NoSuchJobError
+    from rq.job import JobStatus as RQStatus
+
+    now = now or utcnow()
+    reaped = 0
+    with Session(get_engine()) as session:
+        active = session.exec(select(Job).where(
+            Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]))).all()
+        for job in active:
+            stale = False
+            try:
+                rq_job = RQJob.fetch(job.id, connection=connection)
+                status = rq_job.get_status(refresh=False)
+                heartbeat = _aware(rq_job.last_heartbeat)
+                if status in (RQStatus.FAILED, RQStatus.STOPPED, RQStatus.CANCELED):
+                    stale = True
+                elif status == RQStatus.STARTED and heartbeat is not None:
+                    stale = (now - heartbeat).total_seconds() > STALE_HEARTBEAT_SECONDS
+            except NoSuchJobError:
+                stale = (now - _aware(job.created_at)).total_seconds() > MISSING_GRACE_SECONDS
+            if not stale:
+                continue
+            job.status = JobStatus.FAILED
+            job.error = LOST_WORKER_MESSAGE
+            job.finished_at = now
+            session.add(job)
+            if job.type == JobType.INGEST:
+                project = session.get(Project, job.project_id)
+                if project is not None and project.status != ProjectStatus.READY:
+                    project.status = ProjectStatus.FAILED
+                    project.error = LOST_WORKER_MESSAGE
+                    session.add(project)
+            reaped += 1
+        session.commit()
+    if reaped:
+        log.warning("marked %d stale job(s) as failed", reaped)
+    return reaped

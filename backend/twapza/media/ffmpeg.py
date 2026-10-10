@@ -6,6 +6,7 @@ explicit input/output paths and never modifies its input.
 
 import json
 import subprocess
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
@@ -113,16 +114,28 @@ def run_ffmpeg(
     """
     cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-v", "error",
            "-progress", "pipe:1", "-nostats", *args]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    assert proc.stdout is not None and proc.stderr is not None
-    for line in proc.stdout:
-        key, _, value = line.strip().partition("=")
-        if on_progress and duration and key == "out_time_us" and value.isdigit():
-            on_progress(min(1.0, int(value) / 1_000_000 / duration))
-    stderr = proc.stderr.read()
-    if proc.wait() != 0:
+    # stderr goes to a temp file so a chatty ffmpeg can never block on a full pipe.
+    with tempfile.TemporaryFile(mode="w+") as errfile:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errfile, text=True)
+        assert proc.stdout is not None
+        try:
+            for line in proc.stdout:
+                key, _, value = line.strip().partition("=")
+                if on_progress and duration and key == "out_time_us" and value.isdigit():
+                    on_progress(min(1.0, int(value) / 1_000_000 / duration))
+            returncode = proc.wait()
+        except BaseException:
+            # Canceled (or anything else): never leave an ffmpeg process running.
+            proc.kill()
+            proc.wait()
+            raise
+        finally:
+            proc.stdout.close()
+        errfile.seek(0)
+        stderr = errfile.read()
+    if returncode != 0:
         tail = "\n".join(stderr.strip().splitlines()[-5:])
-        raise MediaError(f"ffmpeg failed: {tail or 'unknown error'}")
+        raise MediaError(f"Video processing failed: {tail or 'unknown ffmpeg error'}")
     if on_progress:
         on_progress(1.0)
 

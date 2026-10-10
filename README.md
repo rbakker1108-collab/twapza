@@ -2,10 +2,11 @@
 
 Turn your own long-form videos into short clips.
 
-> **Status: Stage 3 of 5.** Upload, automatic transcription, AI highlights (Claude picks and
+> **Status: Stage 4 of 5.** Upload, automatic transcription, AI highlights (Claude picks and
 > ranks the best moments; you can trim them) and simple fixed-length clipping all work, with
 > single-clip and ZIP downloads as vertical 1080×1920 for YouTube Shorts / TikTok / Reels
-> (centre crop or blurred-fit) or in the original shape. Burned-in captions are next.
+> (centre crop or blurred-fit) or in the original shape, optionally with burned-in
+> word-by-word captions. Final polish is next.
 
 Twapza works only with videos you upload yourself (mp4, mov or mkv, up to about 3 hours
 and 20 GB). Before uploading, you confirm that you own the video or have permission to
@@ -29,6 +30,9 @@ usage (an estimate from token counts, not a measurement; `TWAPZA_CLAUDE_EFFORT=m
 The first transcription downloads the Whisper model (`small`, ~500 MB) into the
 `twapza-data` volume. Transcription runs on the CPU, so long videos take a while;
 set `TWAPZA_WHISPER_MODEL=base` in `.env` for faster, less accurate results.
+
+Caption fonts (Montserrat, Poppins, Anton, Bebas Neue) are bundled under the SIL Open
+Font License; see `backend/twapza/captions/fonts/`.
 
 ## Development
 

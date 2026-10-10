@@ -1,6 +1,14 @@
-import type { ExportSettings, Project } from "../api/client";
+import { useRef } from "react";
 
-export const DEFAULT_EXPORT: ExportSettings = { aspect: "9:16", vertical_fit: "crop", upscale_1080: true };
+import type { CaptionSettings, ExportSettings, Project } from "../api/client";
+import { CaptionOptions, DEFAULT_CAPTIONS } from "./CaptionOptions";
+
+export const DEFAULT_EXPORT: ExportSettings = {
+  aspect: "9:16",
+  vertical_fit: "crop",
+  upscale_1080: true,
+  captions: null,
+};
 
 /** Shorter side of the source in pixels, or 0 if unknown. */
 export const shortSide = (p: Project) => Math.min(p.width ?? 0, p.height ?? 0);
@@ -34,6 +42,12 @@ function Choice({ checked, onSelect, disabled, title, hint }: {
 export function ExportOptions({ project, value, onChange, disabled }: Props) {
   const set = (patch: Partial<ExportSettings>) => onChange({ ...value, ...patch });
   const vertical = value.aspect === "9:16";
+  // Remember the caption style while captions are switched off.
+  const lastCaptions = useRef<CaptionSettings>(value.captions ?? DEFAULT_CAPTIONS);
+  const setCaptions = (next: CaptionSettings | null) => {
+    if (next) lastCaptions.current = next;
+    set({ captions: next });
+  };
 
   return (
     <fieldset className="space-y-3" disabled={disabled}>
@@ -84,6 +98,21 @@ export function ExportOptions({ project, value, onChange, disabled }: Props) {
           </label>
         )
       )}
+
+      <div className="space-y-3 border-t border-slate-200 pt-4">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-indigo-600"
+            checked={value.captions !== null}
+            onChange={(e) => setCaptions(e.target.checked ? lastCaptions.current : null)}
+          />
+          Burn in captions <span className="font-normal text-slate-500">(word-by-word highlight)</span>
+        </label>
+        {value.captions && (
+          <CaptionOptions value={value.captions} onChange={setCaptions} vertical={vertical || !project.width || (project.height ?? 0) > project.width} />
+        )}
+      </div>
     </fieldset>
   );
 }

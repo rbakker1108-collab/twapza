@@ -27,10 +27,18 @@ class MediaInfo:
     fps: float
     video_codec: str
     audio_codec: str | None
+    rotation: int = 0  # display rotation in degrees (phone videos), 0/90/180/270
 
     @property
     def has_audio(self) -> bool:
         return self.audio_codec is not None
+
+    @property
+    def display_size(self) -> tuple[int, int]:
+        """Width × height as shown to viewers (ffmpeg auto-rotates when decoding)."""
+        if self.rotation in (90, 270):
+            return self.height, self.width
+        return self.width, self.height
 
 
 def _parse_fps(rate: str | None) -> float:
@@ -39,6 +47,19 @@ def _parse_fps(rate: str | None) -> float:
     except (ValueError, ZeroDivisionError):
         value = 0.0
     return round(value, 3)
+
+
+def _rotation(stream: dict) -> int:
+    raw = None
+    for side in stream.get("side_data_list") or []:
+        if "rotation" in side:
+            raw = side["rotation"]
+    if raw is None:
+        raw = (stream.get("tags") or {}).get("rotate")
+    try:
+        return int(round(float(raw))) % 360 if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 def probe(path: Path) -> MediaInfo:
@@ -75,6 +96,7 @@ def probe(path: Path) -> MediaInfo:
         fps=_parse_fps(video.get("avg_frame_rate") or video.get("r_frame_rate")),
         video_codec=video.get("codec_name", "unknown"),
         audio_codec=audio.get("codec_name") if audio else None,
+        rotation=_rotation(video),
     )
 
 
@@ -171,6 +193,27 @@ def vertical_filter(mode: str = "crop") -> str:
                 f":flags=lanczos,setsar=1[fgo];"
                 f"[bgo][fgo]overlay=(W-w)/2:(H-h)/2")
     raise ValueError(f"unknown vertical mode: {mode!r}")
+
+
+_UNSAFE_FILTER_CHARS = set("'\\:,;[]")
+
+
+def ass_filter(ass_path: Path, fonts_dir: Path) -> str:
+    """ffmpeg filter that burns an ASS subtitle file using fonts from ``fonts_dir``.
+
+    Paths are embedded in the filter string, so they must not contain characters
+    the filtergraph parser treats specially (we only pass our own temp/package paths).
+    """
+    for p in (ass_path, fonts_dir):
+        if _UNSAFE_FILTER_CHARS & set(str(p)):
+            raise MediaError(f"unsupported characters in path: {p}")
+    return f"ass=filename='{ass_path}':fontsdir='{fonts_dir}'"
+
+
+def join_filters(*filters: str | None) -> str | None:
+    """Chain filters (each may itself be a chain or a labelled graph ending in one output)."""
+    parts = [f for f in filters if f]
+    return ",".join(parts) if parts else None
 
 
 def cut_clip(src: Path, dst: Path, start: float, end: float, *, preset: str = "veryfast",

@@ -178,3 +178,32 @@ def test_missing_thumbnail_is_regenerated(client, project, with_key, highlighter
     clip = client.get(f"/api/projects/{project['id']}/clips?source=ai").json()[0]
     shutil.rmtree(isolated_env / "storage" / "projects" / project["id"] / "thumbs")
     assert client.get(clip["thumbnail_url"]).status_code == 200
+
+
+def test_export_with_captions(client, project, with_key, highlighter, tmp_path):
+    """Captions are burned in for the (trimmed) clip range; bad colours are rejected."""
+    from twapza.media import ffmpeg as media
+
+    run_ai(client, project["id"])
+    clip = client.get(f"/api/projects/{project['id']}/clips?source=ai").json()[0]
+    settings = {"aspect": "9:16", "captions": {"font": "bebas", "highlight_color": "#00FF00",
+                                               "position": "middle", "words_per_line": 2}}
+    job = client.post(f"/api/clips/{clip['id']}/export", json={"settings": settings}).json()
+    assert job["status"] == "succeeded", job
+    out = tmp_path / "captioned.mp4"
+    out.write_bytes(client.get(job["download_url"]).content)
+    assert (media.probe(out).width, media.probe(out).height) == (1080, 1920)
+
+    plain = client.post(f"/api/clips/{clip['id']}/export",
+                        json={"settings": {"aspect": "9:16"}}).json()
+    assert plain["id"] != job["id"]
+    assert client.get(plain["download_url"]).content != out.read_bytes()
+
+    bad = client.post(f"/api/clips/{clip['id']}/export",
+                      json={"settings": {"captions": {"text_color": "white"}}})
+    assert bad.status_code == 422
+
+
+def test_fonts_are_served(client):
+    r = client.get("/api/fonts/Anton-Regular.ttf")
+    assert r.status_code == 200 and len(r.content) > 10000

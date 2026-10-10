@@ -39,7 +39,7 @@ describe("ClipsWorkspace", () => {
     await screen.findByText("Hot take");
     await zipIn(screen.getByText(/highlight, best first/).closest("section")!);
     await waitFor(() =>
-      expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", { aspect: "9:16", vertical_fit: "crop", upscale_1080: false }),
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", { aspect: "9:16", vertical_fit: "crop", upscale_1080: false, captions: null }),
     );
 
     await userEvent.click(screen.getByRole("radio", { name: /blurred background/i }));

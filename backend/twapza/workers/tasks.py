@@ -2,6 +2,7 @@
 
 import json
 import logging
+import tempfile
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -10,6 +11,8 @@ from sqlmodel import Session, delete, select
 
 from twapza import queue as jobqueue
 from twapza import transcription
+from twapza.captions.ass import build_ass
+from twapza.captions.style import FONTS_DIR
 from twapza.clipping.highlights import ask_for_candidates, build_highlights
 from twapza.clipping.llm import ClaudeHighlighter, HighlightFinder, chunk_transcript
 from twapza.clipping.signals import detect_scene_cuts, energy_from_wav
@@ -17,7 +20,9 @@ from twapza.clipping.simple import plan_simple_clips
 from twapza.config import get_settings
 from twapza.db.models import Clip, ClipSource, Job, JobType, Project, ProjectStatus
 from twapza.db.session import get_engine
-from twapza.exports import ExportSettings, export_filename, export_key, video_filter
+from twapza.exports import (
+    ExportSettings, export_filename, export_key, output_size, video_filter,
+)
 from twapza.media import ffmpeg
 from twapza.queue import ProgressReporter, run_tracked
 from twapza.storage import get_storage
@@ -105,6 +110,30 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
         if on_progress:
             on_progress(1.0)
         return key
+    app = get_settings()
+    vf = video_filter(settings, project.width or 0, project.height or 0)
+    with storage.read_path(project.original_key) as src, \
+            tempfile.TemporaryDirectory(prefix="twapza-ass-") as tmp:
+        if settings.captions:
+            ass_text = _captions_for(project, clip, settings, src)
+            if ass_text:
+                ass_path = Path(tmp) / "captions.ass"
+                ass_path.write_text(ass_text, encoding="utf-8")
+                vf = ffmpeg.join_filters(vf, ffmpeg.ass_filter(ass_path, FONTS_DIR))
+        with storage.write_path(key) as dst:
+            ffmpeg.cut_clip(src, dst, clip.start, clip.end, preset=app.export_preset,
+                            crf=app.export_crf, video_filter=vf, on_progress=on_progress)
+    return key
+
+
+def _captions_for(project: Project, clip: Clip, settings: ExportSettings, src: Path) -> str | None:
+    """ASS subtitles for the clip, or None when nothing is said in it."""
+    transcript = load_transcript(project)
+    if transcript is None or not transcript.words:
+        return None
+    width, height = output_size(settings, *ffmpeg.probe(src).display_size)
+    return build_ass(transcript.words, clip_start=clip.start, clip_end=clip.end,
+                     settings=settings.captions, width=width, height=height)
     app = get_settings()
     vf = video_filter(settings, project.width or 0, project.height or 0)
     with storage.read_path(project.original_key) as src, storage.write_path(key) as dst:

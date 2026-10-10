@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from twapza.captions.style import CaptionSettings
 from twapza.db.models import Clip, Project
 from twapza.media import ffmpeg
 
@@ -24,6 +25,8 @@ class ExportSettings(BaseModel):
     # Upscale clips whose shorter side is below 1080 px to 1080p (only used for
     # "original"; vertical exports are always 1080x1920).
     upscale_1080: bool = True
+    # Burned-in word-by-word captions; None = no captions.
+    captions: CaptionSettings | None = None
 
     def normalized(self) -> "ExportSettings":
         """Drop options that don't affect the output, so equal outputs share a cache key."""
@@ -39,6 +42,18 @@ def video_filter(settings: ExportSettings, width: int, height: int) -> str | Non
     if settings.upscale_1080:
         return ffmpeg.upscale_filter(width, height)
     return None
+
+
+def output_size(settings: ExportSettings, width: int, height: int) -> tuple[int, int]:
+    """Frame size of the exported video, given the source's *display* size."""
+    if settings.aspect == "9:16":
+        return ffmpeg.VERTICAL_SIZE
+    short = min(width, height)
+    if settings.upscale_1080 and 0 < short < 1080:
+        scale = 1080 / short
+        even = lambda x: int(round(x * scale / 2)) * 2  # noqa: E731
+        return (1080, even(height)) if width < height else (even(width), 1080)
+    return width, height
 
 
 def export_key(clip: Clip, settings: ExportSettings) -> str:

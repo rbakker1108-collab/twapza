@@ -67,6 +67,14 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   20% loudness score) → `dedupe` (greedy NMS on IoU/containment) → top `TWAPZA_MAX_HIGHLIGHTS`.
   Scene cuts are cached in `scenes.json`; scene detection failing never fails the job.
   Forced `tool_choice` is not allowed on Sonnet 5.5; keep using structured outputs.
+- **Captions** (`captions/`): `ExportSettings.captions` (`CaptionSettings`: font, colours,
+  size, position, words per line, uppercase) → `captions/ass.py::build_ass` (pure: words in the
+  clip range, rebased to 0, grouped into pages of N words broken at sentence ends/pauses; one
+  ASS event per spoken word re-draws the page with that word in the highlight colour) → burned by
+  `ffmpeg.ass_filter` after scaling/cropping, at the export's real frame size
+  (`exports.output_size`, rotation-aware via `MediaInfo.display_size`). Fonts are bundled
+  (OFL) in `captions/fonts/` and also served at `/api/fonts` for the browser preview; keep
+  `FONTS`/sizes in `captions/style.py` + `ass.py` in sync with `frontend/.../CaptionOptions.tsx`.
 - **Trimming**: `PATCH /api/clips/{id}` changes start/end; `suggested_start/end` keep the
   original suggestion for "reset". Thumbnails live in `thumbs/<clip>/<start_ms>.jpg` and are
   regenerated lazily when missing.
@@ -93,7 +101,8 @@ backend/twapza/
   clipping/signals.py  audio energy profile/score, PySceneDetect scene cuts
   clipping/dedupe.py   pure: overlap metrics + greedy NMS
   clipping/highlights.py  ask_for_candidates() (concurrent chunks), refine(), build_highlights()
-  exports.py           ExportSettings, deterministic export keys, download filenames
+  captions/            style.py (CaptionSettings, bundled FONTS), ass.py (pure ASS generation), fonts/
+  exports.py           ExportSettings, output_size, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
   cleanup.py           retention cleanup; `python -m twapza.cleanup [--once]`
@@ -107,10 +116,9 @@ frontend/src/
   components/ExportOptions.tsx  download format picker (9:16 crop/blur, original, 1080p upscale)
   components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
+  components/CaptionOptions.tsx  caption style controls + live 9:16 preview
   components/, pages/  UI (Tailwind)
 ```
-
-Planned modules for later stages: `captions/ass.py`.
 
 To add a hosted transcription API: implement `Transcriber` in `transcription/<name>.py`
 and register it in `transcription/get_transcriber()` (selected by `TWAPZA_TRANSCRIBER`).
@@ -178,6 +186,6 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 1. ✅ Skeleton: Compose, chunked upload with rights checkbox, RQ jobs with SSE progress, ingest (probe/audio/proxy), cleanup.
 2. ✅ Transcription (faster-whisper) + simple clipping with sentence-boundary snapping, downloads + ZIP.
 3. ✅ AI highlights (Claude), audio-energy/scene refinement, de-duplication, ranked list + trim UI.
-4. Burned-in word-highlight captions (ASS). (9:16 centre crop + blurred-fit was pulled
+4. ✅ Burned-in word-highlight captions (ASS). (9:16 centre crop + blurred-fit was pulled
    forward into Stage 2; face-tracked crop remains a later option.)
 5. Polish: error handling, limits, cleanup verification, README, GPU profile.

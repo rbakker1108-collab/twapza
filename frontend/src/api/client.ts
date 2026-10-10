@@ -39,6 +39,19 @@ export interface Clip {
 export type Aspect = "original" | "9:16";
 export type VerticalFit = "crop" | "blur";
 
+export type CaptionFont = "montserrat" | "poppins" | "anton" | "bebas";
+
+export interface CaptionSettings {
+  font: CaptionFont;
+  text_color: string; // "#RRGGBB"
+  highlight_color: string;
+  outline_color: string;
+  size: "small" | "medium" | "large";
+  position: "bottom" | "middle" | "top";
+  words_per_line: number; // 1-8
+  uppercase: boolean;
+}
+
 export interface ExportSettings {
   /** "9:16" = 1080x1920 for YouTube Shorts / TikTok / Reels. */
   aspect: Aspect;
@@ -46,6 +59,8 @@ export interface ExportSettings {
   vertical_fit: VerticalFit;
   /** Upscale clips whose shorter side is below 1080 px (only for "original"). */
   upscale_1080: boolean;
+  /** Burned-in word-by-word captions; null = none. */
+  captions: CaptionSettings | null;
 }
 
 export interface Project {

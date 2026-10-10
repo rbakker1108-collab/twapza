@@ -1,1 +1,7 @@
 @import "tailwindcss";
+
+/* Caption fonts, served by the API (same files the export uses). */
+@font-face { font-family: "Twapza Montserrat"; src: url("/api/fonts/Montserrat-ExtraBold.ttf"); font-display: swap; }
+@font-face { font-family: "Twapza Poppins"; src: url("/api/fonts/Poppins-ExtraBold.ttf"); font-display: swap; }
+@font-face { font-family: "Twapza Anton"; src: url("/api/fonts/Anton-Regular.ttf"); font-display: swap; }
+@font-face { font-family: "Twapza Bebas"; src: url("/api/fonts/BebasNeue-Regular.ttf"); font-display: swap; }

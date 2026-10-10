@@ -42,3 +42,25 @@ def test_export_filename():
     assert export_filename(project(), clip()) == "My_Talk_simple03_01m01s-01m31s.mp4"
     assert export_filename(project(), clip(), ExportSettings(aspect="9:16")) == \
         "My_Talk_simple03_01m01s-01m31s_vertical.mp4"
+
+
+def test_output_size():
+    from twapza.exports import output_size
+
+    v = ExportSettings(aspect="9:16")
+    assert output_size(v, 1920, 1080) == (1080, 1920)
+    assert output_size(ExportSettings(), 1280, 720) == (1920, 1080)          # upscaled
+    assert output_size(ExportSettings(), 720, 1280) == (1080, 1920)          # portrait upscaled
+    assert output_size(ExportSettings(), 854, 480) == (1922, 1080)           # matches ffmpeg's -2
+    assert output_size(ExportSettings(upscale_1080=False), 1280, 720) == (1280, 720)
+    assert output_size(ExportSettings(), 3840, 2160) == (3840, 2160)          # never downscaled
+
+
+def test_captions_change_the_export_key():
+    from twapza.captions.style import CaptionSettings
+
+    c = clip()
+    plain = export_key(c, ExportSettings(aspect="9:16"))
+    with_captions = export_key(c, ExportSettings(aspect="9:16", captions=CaptionSettings()))
+    other_colour = export_key(c, ExportSettings(aspect="9:16", captions=CaptionSettings(highlight_color="#00FF00")))
+    assert len({plain, with_captions, other_colour}) == 3

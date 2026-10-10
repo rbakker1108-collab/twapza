@@ -4,8 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from twapza.api.routes import clips, jobs, projects, uploads
+from twapza.captions.style import FONTS_DIR
 from twapza.config import ALLOWED_EXTENSIONS, get_settings
 from twapza.db.session import init_db
 
@@ -23,6 +25,8 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(jobs.router)
     app.include_router(clips.router)
+    # Caption fonts, so the browser preview uses the same typefaces as the export.
+    app.mount("/api/fonts", StaticFiles(directory=FONTS_DIR), name="fonts")
 
     @app.get("/api/health", tags=["meta"])
     def health() -> dict:

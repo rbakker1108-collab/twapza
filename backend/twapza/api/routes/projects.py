@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from twapza.api.schemas import ProjectRead, ProjectSummary
+from twapza.api.schemas import ProjectRead, ProjectSummary, UpdateCredit
 from twapza.db.models import Clip, Job, JobStatus, Project, utcnow
 from twapza.db.session import get_session
 from twapza.storage import Storage, get_storage
@@ -69,6 +69,19 @@ def delete_project_now(
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(project_id: str, session: Session = Depends(get_session)) -> ProjectRead:
     project = get_project_or_404(session, project_id)
+    jobs = session.exec(select(Job).where(Job.project_id == project_id).order_by(Job.created_at)).all()
+    return ProjectRead.of(project, list(jobs))
+
+
+@router.patch("/{project_id}", response_model=ProjectRead)
+def update_credit(project_id: str, body: UpdateCredit, session: Session = Depends(get_session)) -> ProjectRead:
+    """Edit who to credit in clip descriptions (filled in automatically for YouTube imports)."""
+    project = get_project_or_404(session, project_id)
+    for name, value in body.model_dump(exclude_unset=True).items():
+        setattr(project, name, value)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
     jobs = session.exec(select(Job).where(Job.project_id == project_id).order_by(Job.created_at)).all()
     return ProjectRead.of(project, list(jobs))
 

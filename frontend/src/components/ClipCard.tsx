@@ -4,6 +4,7 @@ import { api, type Clip, type ExportSettings, type Job } from "../api/client";
 import { formatDuration } from "../lib/format";
 import { runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
+import { DescriptionPanel } from "./DescriptionPanel";
 
 interface Props {
   clip: Clip;
@@ -14,6 +15,7 @@ interface Props {
 export function ClipCard({ clip, proxyUrl, settings }: Props) {
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [describing, setDescribing] = useState(false);
   const busy = !!job && job.status !== "succeeded" && job.status !== "failed";
 
   async function download() {
@@ -56,6 +58,15 @@ export function ClipCard({ clip, proxyUrl, settings }: Props) {
       >
         {busy ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Download"}
       </button>
+      <button
+        type="button"
+        onClick={() => setDescribing(!describing)}
+        aria-expanded={describing}
+        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50"
+      >
+        Description
+      </button>
+      {describing && <DescriptionPanel clipId={clip.id} />}
       {clip.text && (
         <a
           href={api.subtitlesUrl(clip.id)}

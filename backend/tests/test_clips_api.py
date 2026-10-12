@@ -159,7 +159,8 @@ def test_schema_v2_database_is_migrated_without_losing_data(isolated_env):
                       rights_confirmed_at=now, expires_at=now))
         s.commit()
     with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE project DROP COLUMN source_url"))  # added in v4
+        for column in ("source_url", "source_title", "source_channel", "source_channel_url"):
+            conn.execute(text(f"ALTER TABLE project DROP COLUMN {column}"))  # added in v4/v5
         conn.execute(text("PRAGMA user_version = 2"))
         conn.execute(text("INSERT INTO clip (id, project_id, source, \"index\", start, \"end\", text) "
                           "VALUES ('c', 'p', 'SIMPLE', 1, 0, 60, 'hi')"))
@@ -168,6 +169,7 @@ def test_schema_v2_database_is_migrated_without_losing_data(isolated_env):
     with Session(engine) as s:
         clip = s.get(Clip, "c")
         assert clip is not None and clip.source == ClipSource.SIMPLE and clip.suggested_start is None
+        assert clip.description is None
         project = s.get(Project, "p")
         assert project is not None and project.source_url is None
     with engine.connect() as conn:

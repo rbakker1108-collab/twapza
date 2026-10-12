@@ -4,6 +4,7 @@ import { api, type Clip, type ExportSettings, type Job } from "../api/client";
 import { formatDuration } from "../lib/format";
 import { isFinished, runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
+import { DescriptionPanel } from "./DescriptionPanel";
 import { TrimControls } from "./TrimControls";
 
 interface Props {
@@ -24,6 +25,7 @@ export function scoreTone(score: number) {
 
 export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, maxLength, onChange }: Props) {
   const [trimming, setTrimming] = useState(false);
+  const [describing, setDescribing] = useState(false);
   const [draft, setDraft] = useState<{ start: number; end: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
@@ -137,6 +139,14 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
           >
             {exporting ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Download"}
           </button>
+          <button
+            type="button"
+            onClick={() => setDescribing(!describing)}
+            aria-expanded={describing}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+          >
+            Description
+          </button>
           {clip.text && (
             <a
               href={api.subtitlesUrl(clip.id)}
@@ -148,6 +158,7 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
             </a>
           )}
         </div>
+        {describing && <DescriptionPanel key={`${clip.start}-${clip.end}`} clipId={clip.id} />}
       </div>
     </article>
   );

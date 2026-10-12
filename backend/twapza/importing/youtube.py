@@ -53,6 +53,8 @@ class VideoInfo:
     title: str
     duration: float | None
     is_live: bool
+    channel: str | None = None
+    channel_url: str | None = None
 
 
 def _clean_error(exc: Exception) -> str:
@@ -102,7 +104,16 @@ def fetch_info(url: str) -> VideoInfo:
         title=str(info.get("title") or "YouTube video"),
         duration=float(info["duration"]) if info.get("duration") else None,
         is_live=bool(info.get("is_live")),
+        channel=info.get("channel") or info.get("uploader") or None,
+        channel_url=_channel_url(info),
     )
+
+
+def _channel_url(info: dict) -> str | None:
+    """Prefer the readable handle URL (youtube.com/@name) over the /channel/UC… one."""
+    urls = [info.get("uploader_url"), info.get("channel_url")]
+    urls = [u for u in urls if isinstance(u, str) and u.startswith("http")]
+    return next((u for u in urls if "/@" in u), urls[0] if urls else None)
 
 
 def download_video(url: str, dest: Path, *, max_height: int = 1080,

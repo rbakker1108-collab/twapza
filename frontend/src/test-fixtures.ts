@@ -3,7 +3,8 @@ import type { Clip, Project, PublicConfig } from "./api/client";
 export const makeProject = (w = 1920, h = 1080, over: Partial<Project> = {}): Project => ({
   id: "p1", filename: "talk.mp4", size_bytes: 1, status: "ready", error: null, created_at: "",
   expires_at: "", rights_confirmed_at: "", duration: 600, width: w, height: h, fps: 25,
-  has_audio: true, source_url: null, jobs: [], ...over,
+  has_audio: true, source_url: null, source_title: null, source_channel: null,
+  source_channel_url: null, jobs: [], ...over,
 });
 
 export const makeClip = (over: Partial<Clip> = {}): Clip => ({

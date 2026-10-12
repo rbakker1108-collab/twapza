@@ -232,7 +232,9 @@ def import_youtube(job_id: str, project_id: str, url: str) -> None:
                 f"Video is {info.duration / 60:.0f} min long; "
                 f"the limit is {settings.max_duration_min:.0f} min."
             )
-        project = _set_project(project_id, filename=safe_filename(info.title), ext="mp4")
+        project = _set_project(project_id, filename=safe_filename(info.title), ext="mp4",
+                               source_title=info.title, source_channel=info.channel,
+                               source_channel_url=info.channel_url)
         storage = get_storage()
         with storage.write_path(project.original_key) as dst:
             youtube.download_video(

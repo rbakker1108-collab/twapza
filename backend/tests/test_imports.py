@@ -41,6 +41,15 @@ def test_youtube_video_id_rejects_everything_else(url):
     assert youtube_video_id(url) is None
 
 
+def test_channel_url_prefers_the_handle():
+    assert youtube._channel_url({"uploader_url": "https://www.youtube.com/@JoeFazer",
+                                 "channel_url": "https://www.youtube.com/channel/UC1"}) == \
+        "https://www.youtube.com/@JoeFazer"
+    assert youtube._channel_url({"channel_url": "https://www.youtube.com/channel/UC1"}) == \
+        "https://www.youtube.com/channel/UC1"
+    assert youtube._channel_url({"uploader_url": None}) is None
+
+
 def test_clean_error_messages():
     assert "private" in youtube._clean_error(Exception("ERROR: [youtube] abc: Private video. Sign in"))
     assert "blocking" in youtube._clean_error(Exception("Sign in to confirm you're not a bot"))
@@ -58,7 +67,8 @@ def test_clean_error_messages():
 @pytest.fixture
 def fake_youtube(monkeypatch, sample_video):
     """Replace the network parts of yt-dlp with a copy of the sample video."""
-    state = {"info": VideoInfo(id=VID, title='My talk: "part 1"', duration=3.0, is_live=False),
+    state = {"info": VideoInfo(id=VID, title='My talk: "part 1"', duration=3.0, is_live=False,
+                               channel="Joe Fazer", channel_url="https://www.youtube.com/@JoeFazer"),
              "urls": [], "before_download": None}
 
     def fetch_info(url):
@@ -93,6 +103,9 @@ def test_import_creates_a_ready_project(client, fake_youtube):
     assert project["status"] == "ready"
     assert project["filename"] == "My talk part 1.mp4"
     assert project["source_url"] == canonical_url(VID)
+    assert project["source_title"] == 'My talk: "part 1"'
+    assert project["source_channel"] == "Joe Fazer"
+    assert project["source_channel_url"] == "https://www.youtube.com/@JoeFazer"
     assert project["duration"] == pytest.approx(3.0, abs=0.2)
     assert project["size_bytes"] > 0
     jobs = {j["type"]: j["status"] for j in project["jobs"]}

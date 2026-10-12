@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from twapza.exports import ExportSettings
 
@@ -10,6 +10,35 @@ from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project,
 class CreateImport(BaseModel):
     url: str = Field(min_length=1, max_length=500)
     rights_confirmed: bool
+
+
+class UpdateCredit(BaseModel):
+    """Who made the original video (shown as a credit in clip descriptions). Empty = none."""
+    source_title: str | None = Field(default=None, max_length=300)
+    source_channel: str | None = Field(default=None, max_length=200)
+    source_url: str | None = Field(default=None, max_length=500)
+    source_channel_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def _blank_is_none(cls, value: str | None) -> str | None:
+        value = " ".join(value.split()) if value else ""
+        return value or None
+
+    @field_validator("source_url", "source_channel_url", mode="after")
+    @classmethod
+    def _http_url(cls, value: str | None) -> str | None:
+        if value and not value.lower().startswith(("https://", "http://")):
+            raise ValueError("must be a link starting with https://")
+        return value
+
+
+class ClipDescription(BaseModel):
+    text: str               # ready to paste: description, credit, hashtags
+    description: str
+    hashtags: list[str]
+    credit: str | None
+    ai: bool                # written by Claude (False = simple fallback text)
 
 
 class CreateUpload(BaseModel):
@@ -61,6 +90,9 @@ class ProjectRead(BaseModel):
     fps: float | None
     has_audio: bool | None
     source_url: str | None = None
+    source_title: str | None = None
+    source_channel: str | None = None
+    source_channel_url: str | None = None
     jobs: list[JobRead] = []
 
     @classmethod

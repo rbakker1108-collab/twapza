@@ -62,8 +62,12 @@ class Project(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime = Field(index=True)
     error: str | None = None
-    # Set when the video was imported from a YouTube link
+    # Where the video comes from, for crediting the original creator in clip descriptions.
+    # Filled in by a YouTube import; editable for any project.
     source_url: str | None = None
+    source_title: str | None = None
+    source_channel: str | None = None
+    source_channel_url: str | None = None
 
     # Filled in by the ingest job
     duration: float | None = None
@@ -142,6 +146,9 @@ class Clip(SQLModel, table=True):
     # Where the clip was originally suggested, so a trim can be undone
     suggested_start: float | None = None
     suggested_end: float | None = None
+    # Generated YouTube Shorts description (credit is added when it is shown)
+    description: str | None = None
+    hashtags: str | None = None  # space-separated, e.g. "#shorts #amazon"
     created_at: datetime = Field(default_factory=utcnow)
 
     @property

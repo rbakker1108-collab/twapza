@@ -78,9 +78,24 @@ export interface Project {
   height: number | null;
   fps: number | null;
   has_audio: boolean | null;
-  /** The YouTube link this project was imported from (null for uploads). */
+  /** The original video, credited in clip descriptions (filled in by YouTube imports, editable). */
   source_url: string | null;
+  source_title: string | null;
+  source_channel: string | null;
+  source_channel_url: string | null;
   jobs: Job[];
+}
+
+export type Credit = Pick<Project, "source_title" | "source_channel" | "source_url" | "source_channel_url">;
+
+export interface ClipDescription {
+  /** Ready to paste: description, credit, hashtags. */
+  text: string;
+  description: string;
+  hashtags: string[];
+  credit: string | null;
+  /** Written by Claude (false = simple text, e.g. no API key). */
+  ai: boolean;
 }
 
 export interface ProjectSummary {
@@ -138,6 +153,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const detail = body?.detail;
       if (typeof detail === "string") message = detail;
       else if (detail?.message) message = detail.message;
+      else if (Array.isArray(detail) && typeof detail[0]?.msg === "string")
+        message = detail[0].msg.replace(/^Value error, /, ""); // FastAPI validation error
     } catch {
       /* non-JSON error body */
     }
@@ -163,6 +180,15 @@ export const api = {
     request<{ project: Project; job: Job }>(`/api/uploads/${id}/complete`, { method: "POST" }),
   importYoutube: (url: string, rights_confirmed: boolean) =>
     request<{ project: Project; job: Job }>("/api/imports", json({ url, rights_confirmed })),
+  updateCredit: (id: string, credit: Credit) =>
+    request<Project>(`/api/projects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credit),
+    }),
+  getDescription: (clipId: string) => request<ClipDescription>(`/api/clips/${clipId}/description`),
+  writeDescription: (clipId: string) =>
+    request<ClipDescription>(`/api/clips/${clipId}/description`, { method: "POST" }),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),

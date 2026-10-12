@@ -90,6 +90,15 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
 - **Subtitles**: captions are on by default in the UI (`DEFAULT_EXPORT`). Besides burning them in,
   `GET /api/clips/{id}/subtitles.srt` returns a sidecar SRT (`captions/srt.py::build_srt`, same
   word grouping as the ASS captions) for uploading to YouTube/TikTok.
+- **Descriptions + credit** (`clipping/descriptions.py`): per clip, `POST /api/clips/{id}/description`
+  has Claude (`ClaudeDescriber`, same model, effort `medium`, structured output, `fallbacks:
+  "default"`) write a hook description + hashtags, saved on `Clip.description/hashtags` (cleared
+  when the clip is trimmed). The **credit block is never written by the model**: `credit_text()`
+  builds it from `Project.source_channel/source_title/source_url/source_channel_url` (filled in by
+  the YouTube import, editable via `PATCH /api/projects/{id}`), and `compose()` joins description →
+  credit → hashtags at read time, so editing the credit updates every description. Without an API
+  key, `fallback_copy` gives a plain description. The route's `get_describer` dependency is
+  overridden with a fake in tests.
 - **Captions** (`captions/`): `ExportSettings.captions` (`CaptionSettings`: font, colours,
   size, position, words per line, uppercase) → `captions/ass.py::build_ass` (pure: words in the
   clip range, rebased to 0, grouped into pages of N words broken at sentence ends/pauses; one
@@ -124,6 +133,7 @@ backend/twapza/
   clipping/signals.py  audio energy profile/score, PySceneDetect scene cuts
   clipping/dedupe.py   pure: overlap metrics + greedy NMS
   clipping/highlights.py  ask_for_candidates() (concurrent chunks), refine(), build_highlights()
+  clipping/descriptions.py  credit_text/compose/normalize_hashtags/parse_copy (pure), ClaudeDescriber
   importing/youtube.py YouTube link parsing, yt-dlp info lookup + download (ImportFailed)
   captions/            style.py (CaptionSettings, bundled FONTS), ass.py (pure ASS generation), srt.py, fonts/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
@@ -139,6 +149,7 @@ frontend/src/
   components/ClipPlayer.tsx  plays [start,end] of the proxy, loads lazily; CSS previews 9:16 framing
   components/ExportOptions.tsx  download format picker (9:16 blur/bars/crop, original, 1080p upscale, subtitles)
   components/YoutubeImportForm.tsx  link + rights form (home page tab next to UploadForm)
+  components/CreditEditor.tsx, DescriptionPanel.tsx  original-creator credit + per-clip description
   components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview
@@ -218,6 +229,7 @@ External services (Whisper, Claude) must be faked behind their protocols in test
    recent projects + delete, orphan cleanup, GPU compose override, README.
 6. ✅ YouTube Shorts focus: YouTube link import (yt-dlp), whole-frame 9:16 fit by default
    (blur / black bars; crop optional), subtitles on by default + .srt download.
+7. ✅ Clip descriptions (Claude) with an exact credit to the original creator (editable).
 
 Possible next steps: face-tracked vertical crop, editable caption text, hosted
 transcription backend, S3 storage backend, auth for multi-user hosting.

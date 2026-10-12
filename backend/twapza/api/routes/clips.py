@@ -6,9 +6,14 @@ from sqlmodel import Session, select
 
 from twapza.api.routes.projects import get_project_or_404, serve_object
 from twapza.api.schemas import (
-    ClipRead, ExportRequest, JobRead, SimpleClipsRequest, TrimRequest, ZipExportRequest,
+    ClipDescription, ClipRead, ExportRequest, JobRead, SimpleClipsRequest, TrimRequest, ZipExportRequest,
 )
 from twapza.captions.srt import build_srt
+from twapza.clipping.descriptions import (
+    ClaudeDescriber, ClipCopy, Credit, Describer, compose, credit_text, fallback_copy, normalize_hashtags,
+    parse_copy, user_prompt,
+)
+from twapza.clipping.llm import HighlightError
 from twapza.config import Settings, get_settings
 from twapza.db.models import Clip, ClipSource, JobType, Project, ProjectStatus, new_id
 from twapza.db.session import get_session
@@ -93,6 +98,8 @@ async def trim_clip(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"A clip can be at most {settings.max_clip_seconds:g} seconds long.")
 
+    if (clip.start, clip.end) != (start, end):
+        clip.description = clip.hashtags = None  # written for the old range
     clip.start, clip.end = start, end
     transcript = await run_in_threadpool(load_transcript, project)
     if transcript is not None:
@@ -150,6 +157,61 @@ def clip_subtitles(clip_id: str, session: Session = Depends(get_session)) -> Res
     name = export_filename(project, clip).removesuffix(".mp4") + ".srt"
     return Response(srt, media_type="application/x-subrip; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+def get_describer(settings: Settings = Depends(get_settings)) -> Describer | None:
+    """Claude, if an API key is configured (replaced by a fake in tests)."""
+    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
+    return ClaudeDescriber(api_key=key, model=settings.claude_model) if key else None
+
+
+def _credit(project: Project) -> Credit:
+    return Credit(creator=project.source_channel, title=project.source_title,
+                  video_url=project.source_url, channel_url=project.source_channel_url)
+
+
+def _description(project: Project, clip: Clip) -> ClipDescription:
+    if clip.description:
+        copy, ai = ClipCopy(clip.description, normalize_hashtags(clip.hashtags or "")), True
+    else:
+        copy, ai = fallback_copy(title=clip.title, hook=clip.hook, text=clip.text), False
+    credit = credit_text(_credit(project))
+    return ClipDescription(text=compose(copy.description, copy.hashtags, credit),
+                           description=copy.description, hashtags=copy.hashtags, credit=credit, ai=ai)
+
+
+@router.get("/clips/{clip_id}/description", response_model=ClipDescription)
+def get_clip_description(clip_id: str, session: Session = Depends(get_session)) -> ClipDescription:
+    """The saved description (or a simple one if none was written yet), with the credit."""
+    clip = _clip_or_404(session, clip_id)
+    return _description(get_project_or_404(session, clip.project_id), clip)
+
+
+@router.post("/clips/{clip_id}/description", response_model=ClipDescription)
+def write_clip_description(
+    clip_id: str,
+    session: Session = Depends(get_session),
+    describer: Describer | None = Depends(get_describer),
+) -> ClipDescription:
+    """Have Claude write a new description for the clip (each call gives a fresh one)."""
+    clip = _clip_or_404(session, clip_id)
+    project = get_project_or_404(session, clip.project_id)
+    if describer is None:
+        return _description(project, clip)  # no API key: the simple description
+    prompt = user_prompt(clip_text=clip.text, clip_title=clip.title, clip_hook=clip.hook,
+                         duration=clip.duration, credit=_credit(project))
+    try:
+        copy = parse_copy(describer.write(prompt))
+    except HighlightError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
+    if copy is None:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            "Claude didn't return a usable description. Try again.")
+    clip.description, clip.hashtags = copy.description, " ".join(copy.hashtags)
+    session.add(clip)
+    session.commit()
+    session.refresh(clip)
+    return _description(project, clip)
 
 
 @router.post("/clips/{clip_id}/export", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED)

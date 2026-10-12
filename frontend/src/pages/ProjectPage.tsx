@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, type Job, type Project, type PublicConfig } from "../api/client";
 import { ProgressBar } from "../components/ProgressBar";
 import { ClipsWorkspace } from "../components/ClipsWorkspace";
+import { CreditEditor } from "../components/CreditEditor";
 import { JobProgress } from "../components/JobProgress";
 import { useJob } from "../hooks/useJob";
 import { formatBytes, formatDuration } from "../lib/format";
@@ -112,6 +113,7 @@ export function ProjectPage() {
             preload="metadata"
             className="aspect-video w-full max-w-3xl rounded-xl bg-black"
           />
+          <CreditEditor project={project} onSaved={(p) => setProject({ ...project, ...p, jobs: project.jobs })} />
           <ClipsWorkspace project={project} config={config} />
         </>
       ) : failed ? (

@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 # version to MIGRATIONS. If there is no migration path (e.g. a much older
 # database), the database and stored project files are reset: all data is
 # temporary (24h retention). Replace with Alembic before real deployments.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 MIGRATIONS: dict[int, list[str]] = {
     # version reached -> statements that upgrade from version - 1
@@ -27,6 +27,13 @@ MIGRATIONS: dict[int, list[str]] = {
     ],
     4: [
         "ALTER TABLE project ADD COLUMN source_url VARCHAR",
+    ],
+    5: [
+        "ALTER TABLE project ADD COLUMN source_title VARCHAR",
+        "ALTER TABLE project ADD COLUMN source_channel VARCHAR",
+        "ALTER TABLE project ADD COLUMN source_channel_url VARCHAR",
+        "ALTER TABLE clip ADD COLUMN description VARCHAR",
+        "ALTER TABLE clip ADD COLUMN hashtags VARCHAR",
     ],
 }
 

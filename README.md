@@ -12,6 +12,8 @@ YouTube Shorts (and TikTok / Instagram Reels). Paste a link to your video, or up
   black bars), or a centre crop, or the original shape with optional 1080p upscaling.
 - **Subtitles**, on by default: burned in with word-by-word highlighting (four bundled fonts,
   your colours, size, position and words on screen), plus a `.srt` file per clip.
+- **YouTube descriptions** for each clip: Claude writes a hook and hashtags, and Twapza adds a
+  credit to the original creator (name, video and channel links), ready to copy.
 - Download clips one by one or all at once as a ZIP.
 
 Twapza is for **your own** videos: paste a link to a single YouTube video you posted (public or
@@ -52,7 +54,9 @@ The first transcription downloads the Whisper model (`small`, ~500 MB) once.
    crop, or the original shape; subtitles on (default) or off, and their style.
 4. **AI highlights** tab → **Find highlights** → review the ranked list, play, **Trim**,
    **Download** (or **Download all (ZIP)**). **Subtitles (.srt)** gives a subtitle file to
-   upload alongside the Short.
+   upload alongside the Short. **Description** gives a ready-to-paste YouTube description.
+   The credit at the bottom comes from **Original creator** on the project page: filled in
+   automatically for YouTube links, and editable (fill it in yourself for uploaded files).
    **Simple clips** tab → choose a length → **Generate clips**.
 5. Long-running steps can be **canceled**. Your recent projects are listed on the home page.
 
@@ -79,7 +83,8 @@ After changing `.env`, restart: `docker compose down && docker compose up`.
 
 ## Costs
 
-Only **AI highlights** cost money (Claude API, billed by Anthropic to your Console account).
+Only **AI highlights** and **AI descriptions** cost money (Claude API, billed by Anthropic to your
+Console account). A description is one small request (roughly 1–2 cents at most).
 Uploading, transcription, simple clips, cropping, captions and downloads all run locally for free.
 With the default model we estimate roughly **$0.20–0.60 per hour of video** per run (an
 estimate from token counts; check your Console for real figures). `TWAPZA_CLAUDE_EFFORT=medium`

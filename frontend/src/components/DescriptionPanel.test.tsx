@@ -2,14 +2,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { api, ApiError, type ClipDescription } from "../api/client";
-import { makeProject } from "../test-fixtures";
+import { makeClip, makeProject } from "../test-fixtures";
 import { CreditEditor } from "./CreditEditor";
 import { DescriptionPanel } from "./DescriptionPanel";
 
 const CREDIT = "Clips used from Joe Fazer’s video “Jungle”";
 const desc = (over: Partial<ClipDescription> = {}): ClipDescription => ({
   text: `Hook\n\n${CREDIT}\n\n#shorts`, description: "Hook", hashtags: ["#shorts"], credit: CREDIT,
-  ai: true, ...over,
+  titles: ["He ate WHAT?", "Day 3"], ai: true, ...over,
 });
 
 describe("DescriptionPanel", () => {
@@ -38,9 +38,29 @@ describe("DescriptionPanel", () => {
     await waitFor(() => expect(screen.getByLabelText("YouTube description")).toHaveValue("Second"));
 
     await user.type(screen.getByLabelText("YouTube description"), "!");
-    await user.click(screen.getByRole("button", { name: "Copy" }));
+    await user.click(screen.getByRole("button", { name: "Copy description" }));
     expect(clip).toHaveBeenCalledWith("Second!");
     expect(await screen.findByRole("button", { name: "Copied ✓" })).toBeInTheDocument();
+  });
+
+  it("offers title ideas that can be copied or used as the hook text", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "getDescription").mockResolvedValue(desc());
+    const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    const setTitle = vi.spyOn(api, "setClipTitle").mockImplementation(async (id, title) => ({
+      ...makeClip({ id }), title,
+    }));
+    const onTitleChange = vi.fn();
+    render(<DescriptionPanel clipId="c1" currentTitle="Day 3" onTitleChange={onTitleChange} />);
+
+    expect(await screen.findByText("He ate WHAT?")).toBeInTheDocument();
+    expect(screen.getByText("✓ Hook text")).toBeInTheDocument(); // "Day 3" is the current title
+    await user.click(screen.getAllByRole("button", { name: "Copy" })[0]);
+    expect(copy).toHaveBeenCalledWith("He ate WHAT?");
+    await user.click(screen.getByRole("button", { name: "Use as hook text" }));
+    await waitFor(() => expect(setTitle).toHaveBeenCalledWith("c1", "He ate WHAT?"));
+    expect(onTitleChange).toHaveBeenCalledWith(expect.objectContaining({ title: "He ate WHAT?" }));
+    expect(screen.getAllByText("✓ Hook text")).toHaveLength(1);
   });
 
   it("asks for a credit when there is none, and shows Claude errors", async () => {

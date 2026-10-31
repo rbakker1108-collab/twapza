@@ -149,6 +149,9 @@ class Clip(SQLModel, table=True):
     # Generated YouTube Shorts description (credit is added when it is shown)
     description: str | None = None
     hashtags: str | None = None  # space-separated, e.g. "#shorts #amazon"
+    title_options: str | None = None  # JSON list of suggested Shorts titles
+    # The clip's most gripping line, quoted by Claude, for the optional cold open
+    teaser: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
     @property

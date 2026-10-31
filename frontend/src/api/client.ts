@@ -62,6 +62,12 @@ export interface ExportSettings {
   upscale_1080: boolean;
   /** Burned-in word-by-word captions; null = none. */
   captions: CaptionSettings | null;
+  /** Optional retention boosts: the clip title as text on the first 3 seconds, */
+  hook_text: boolean;
+  /** its most gripping line played first as a teaser, */
+  cold_open: boolean;
+  /** and long pauses between words cut out. */
+  cut_pauses: boolean;
 }
 
 export interface Project {
@@ -93,6 +99,8 @@ export interface ClipDescription {
   text: string;
   description: string;
   hashtags: string[];
+  /** Suggested Shorts titles (one can be used as the hook text). */
+  titles: string[];
   credit: string | null;
   /** Written by Claude (false = simple text, e.g. no API key). */
   ai: boolean;
@@ -197,8 +205,14 @@ export const api = {
   getJob: (id: string) => request<Job>(`/api/jobs/${id}`),
   createSimpleClips: (projectId: string, target_seconds: number) =>
     request<Job>(`/api/projects/${projectId}/simple-clips`, json({ target_seconds })),
-  createAiClips: (projectId: string) =>
-    request<Job>(`/api/projects/${projectId}/ai-clips`, { method: "POST" }),
+  setClipTitle: (clipId: string, title: string) =>
+    request<Clip>(`/api/clips/${clipId}/title`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  createAiClips: (projectId: string, short = false) =>
+    request<Job>(`/api/projects/${projectId}/ai-clips`, json({ short })),
   trimClip: (clipId: string, start: number, end: number) =>
     request<Clip>(`/api/clips/${clipId}`, {
       method: "PATCH",
@@ -211,6 +225,13 @@ export const api = {
     request<Job>(`/api/clips/${clipId}/export`, json({ settings })),
   exportZip: (projectId: string, source: ClipSource, settings?: ExportSettings) =>
     request<Job>(`/api/projects/${projectId}/export-zip`, json({ source, settings })),
-  subtitlesUrl: (clipId: string) => `/api/clips/${clipId}/subtitles.srt`,
+  /** Pass the export settings so the subtitle timing matches the download (cut pauses / cold open). */
+  subtitlesUrl: (clipId: string, settings?: Pick<ExportSettings, "cut_pauses" | "cold_open">) => {
+    const params = new URLSearchParams();
+    if (settings?.cut_pauses) params.set("cut_pauses", "true");
+    if (settings?.cold_open) params.set("cold_open", "true");
+    const query = params.toString();
+    return `/api/clips/${clipId}/subtitles.srt${query ? `?${query}` : ""}`;
+  },
   jobEventsUrl: (id: string) => `/api/jobs/${id}/events`,
 };

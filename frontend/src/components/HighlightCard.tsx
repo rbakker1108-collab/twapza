@@ -149,7 +149,7 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
           </button>
           {clip.text && (
             <a
-              href={api.subtitlesUrl(clip.id)}
+              href={api.subtitlesUrl(clip.id, settings)}
               download
               className="self-center px-1 text-sm text-indigo-700 hover:underline"
               title="Subtitle file to upload to YouTube or TikTok"
@@ -158,7 +158,12 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
             </a>
           )}
         </div>
-        {describing && <DescriptionPanel key={`${clip.start}-${clip.end}`} clipId={clip.id} />}
+        {describing && <DescriptionPanel
+            key={`${clip.start}-${clip.end}`}
+            clipId={clip.id}
+            currentTitle={clip.title}
+            onTitleChange={onChange}
+          />}
       </div>
     </article>
   );

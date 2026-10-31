@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
@@ -6,12 +8,13 @@ from sqlmodel import Session, select
 
 from twapza.api.routes.projects import get_project_or_404, serve_object
 from twapza.api.schemas import (
-    ClipDescription, ClipRead, ExportRequest, JobRead, SimpleClipsRequest, TrimRequest, ZipExportRequest,
+    AiClipsRequest, ClipDescription, ClipRead, ExportRequest, JobRead, SimpleClipsRequest, TitleRequest,
+    TrimRequest, ZipExportRequest,
 )
 from twapza.captions.srt import build_srt
 from twapza.clipping.descriptions import (
-    ClaudeDescriber, ClipCopy, Credit, Describer, compose, credit_text, fallback_copy, normalize_hashtags,
-    parse_copy, user_prompt,
+    ClaudeDescriber, ClipCopy, Credit, Describer, clean_titles, compose, credit_text, fallback_copy,
+    normalize_hashtags, parse_copy, user_prompt,
 )
 from twapza.clipping.llm import HighlightError
 from twapza.config import Settings, get_settings
@@ -21,7 +24,7 @@ from twapza.exports import export_filename, export_key, zip_filename
 from twapza.queue import completed_job, enqueue_job, get_queue
 from twapza.storage import Storage, get_storage
 from twapza.workers.tasks import (
-    export_clip, export_zip, generate_ai_clips, generate_simple_clips, load_transcript,
+    clip_segments, export_clip, export_zip, generate_ai_clips, generate_simple_clips, load_transcript,
     write_thumbnail,
 )
 
@@ -62,6 +65,7 @@ def create_simple_clips(
              status_code=status.HTTP_202_ACCEPTED)
 def create_ai_clips(
     project_id: str,
+    body: AiClipsRequest | None = None,
     session: Session = Depends(get_session),
     queue: Queue = Depends(get_queue),
     settings: Settings = Depends(get_settings),
@@ -72,7 +76,7 @@ def create_ai_clips(
                             "AI highlights need a Claude API key. Add ANTHROPIC_API_KEY to your "
                             ".env file and restart Twapza.")
     job = enqueue_job(session, queue, project_id=project_id, job_type=JobType.AI_CLIPS,
-                      func=generate_ai_clips)
+                      func=generate_ai_clips, short=bool(body and body.short))
     return JobRead.of(job)
 
 
@@ -99,7 +103,7 @@ async def trim_clip(
                             f"A clip can be at most {settings.max_clip_seconds:g} seconds long.")
 
     if (clip.start, clip.end) != (start, end):
-        clip.description = clip.hashtags = None  # written for the old range
+        clip.description = clip.hashtags = clip.title_options = None  # written for the old range
     clip.start, clip.end = start, end
     transcript = await run_in_threadpool(load_transcript, project)
     if transcript is not None:
@@ -146,17 +150,35 @@ def clip_thumbnail(
 
 
 @router.get("/clips/{clip_id}/subtitles.srt")
-def clip_subtitles(clip_id: str, session: Session = Depends(get_session)) -> Response:
-    """The clip's speech as an .srt subtitle file (times relative to the clip)."""
+def clip_subtitles(clip_id: str, cut_pauses: bool = False, cold_open: bool = False,
+                   session: Session = Depends(get_session)) -> Response:
+    """The clip's speech as an .srt subtitle file (times relative to the clip).
+
+    Pass the same ``cut_pauses`` / ``cold_open`` options as the download so the timing matches.
+    """
     clip = _clip_or_404(session, clip_id)
     project = _ready_project(session, clip.project_id)
     transcript = load_transcript(project)
-    srt = build_srt(transcript.words, clip_start=clip.start, clip_end=clip.end) if transcript else None
+    srt = None
+    if transcript:
+        segments = clip_segments(project, clip, transcript, cut_pauses=cut_pauses, cold_open=cold_open)
+        srt = build_srt(transcript.words, segments=segments)
     if not srt:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "There is no speech in this clip.")
     name = export_filename(project, clip).removesuffix(".mp4") + ".srt"
     return Response(srt, media_type="application/x-subrip; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.put("/clips/{clip_id}/title", response_model=ClipRead)
+def set_clip_title(clip_id: str, body: TitleRequest, session: Session = Depends(get_session)) -> ClipRead:
+    """Change the clip's title (also used as the optional hook text on the video)."""
+    clip = _clip_or_404(session, clip_id)
+    clip.title = " ".join(body.title.split()) or None
+    session.add(clip)
+    session.commit()
+    session.refresh(clip)
+    return ClipRead.of(clip)
 
 
 def get_describer(settings: Settings = Depends(get_settings)) -> Describer | None:
@@ -175,9 +197,16 @@ def _description(project: Project, clip: Clip) -> ClipDescription:
         copy, ai = ClipCopy(clip.description, normalize_hashtags(clip.hashtags or "")), True
     else:
         copy, ai = fallback_copy(title=clip.title, hook=clip.hook, text=clip.text), False
+    try:
+        titles = clean_titles(json.loads(clip.title_options or "[]"))
+    except ValueError:
+        titles = []
+    if not titles and clip.title:
+        titles = [clip.title]
     credit = credit_text(_credit(project))
     return ClipDescription(text=compose(copy.description, copy.hashtags, credit),
-                           description=copy.description, hashtags=copy.hashtags, credit=credit, ai=ai)
+                           description=copy.description, hashtags=copy.hashtags, titles=titles,
+                           credit=credit, ai=ai)
 
 
 @router.get("/clips/{clip_id}/description", response_model=ClipDescription)
@@ -208,6 +237,8 @@ def write_clip_description(
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             "Claude didn't return a usable description. Try again.")
     clip.description, clip.hashtags = copy.description, " ".join(copy.hashtags)
+    if copy.titles:
+        clip.title_options = json.dumps(list(copy.titles), ensure_ascii=False)
     session.add(clip)
     session.commit()
     session.refresh(clip)

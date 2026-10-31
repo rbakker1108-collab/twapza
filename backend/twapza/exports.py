@@ -28,6 +28,13 @@ class ExportSettings(BaseModel):
     upscale_1080: bool = True
     # Burned-in word-by-word captions; None = no captions.
     captions: CaptionSettings | None = None
+    # Optional retention boosts (all off by default):
+    # the clip's title as bold text at the top for the first 3 seconds,
+    hook_text: bool = False
+    # its most gripping line played first as a 1.5-6 s teaser,
+    cold_open: bool = False
+    # and silences between words shortened (jump cuts).
+    cut_pauses: bool = False
 
     def normalized(self) -> "ExportSettings":
         """Drop options that don't affect the output, so equal outputs share a cache key."""
@@ -58,7 +65,12 @@ def output_size(settings: ExportSettings, width: int, height: int) -> tuple[int,
 
 
 def export_key(clip: Clip, settings: ExportSettings) -> str:
+    # The hook text and the teaser come from the clip, so they are part of the key too.
     fingerprint = f"{clip.start:.3f}|{clip.end:.3f}|{settings.normalized().model_dump_json()}"
+    if settings.hook_text:
+        fingerprint += f"|hook={clip.title or ''}"
+    if settings.cold_open:
+        fingerprint += f"|teaser={clip.teaser or ''}"
     digest = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
     return f"{clip.exports_prefix}{digest}.mp4"
 

@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 
 MAX_HASHTAGS = 5
 MAX_DESCRIPTION_CHARS = 600
+MAX_TITLE_CHARS = 60
+TITLE_COUNT = 3
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,20 @@ def compose(description: str, hashtags: list[str], credit: str | None) -> str:
 class ClipCopy:
     description: str
     hashtags: list[str]
+    titles: tuple[str, ...] = ()
+
+
+def clean_titles(titles: object, *, limit: int = TITLE_COUNT) -> list[str]:
+    """Trimmed, de-duplicated titles without hashtags or wrapping quotes."""
+    out: list[str] = []
+    for t in titles if isinstance(titles, list) else []:
+        t = re.sub(r"#\w+", "", str(t))
+        t = " ".join(t.split()).strip(" \"“”'")
+        if len(t) > MAX_TITLE_CHARS:
+            t = t[: MAX_TITLE_CHARS - 1].rsplit(" ", 1)[0] + "…"
+        if t and t.lower() not in {o.lower() for o in out}:
+            out.append(t)
+    return out[:limit]
 
 
 def _first_sentence(text: str, limit: int = 160) -> str:
@@ -107,8 +123,9 @@ DESCRIPTION_SCHEMA: dict[str, Any] = {
     "properties": {
         "description": {"type": "string"},
         "hashtags": {"type": "array", "items": {"type": "string"}},
+        "titles": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["description", "hashtags"],
+    "required": ["description", "hashtags", "titles"],
     "additionalProperties": False,
 }
 
@@ -130,6 +147,10 @@ the credit to the original creator and the hashtags are added separately.
 
 Also give 3-5 hashtags relevant to the clip's topic (without the # sign is fine). \
 "shorts" is added automatically.
+
+Finally give 3 different title options for the Short, each under 45 characters: punchy, \
+curiosity-driven and truthful (a bold claim, a question, or the payoff teased). No hashtags, \
+no quotes around them. The chosen title can also be shown as text on the video's first seconds.
 """
 
 
@@ -171,7 +192,7 @@ def parse_copy(raw: str) -> ClipCopy | None:
     # Hashtags belong on their own line, not inside the text.
     description = re.sub(r"(?:\s*#\w+)+\s*$", "", description).strip() or description
     return ClipCopy(description=description[:MAX_DESCRIPTION_CHARS].strip(),
-                    hashtags=normalize_hashtags(tags))
+                    hashtags=normalize_hashtags(tags), titles=tuple(clean_titles(data.get("titles"))))
 
 
 class Describer(Protocol):

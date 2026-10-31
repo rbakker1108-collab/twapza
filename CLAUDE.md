@@ -99,6 +99,19 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   credit → hashtags at read time, so editing the credit updates every description. Without an API
   key, `fallback_copy` gives a plain description. The route's `get_describer` dependency is
   overridden with a fake in tests.
+- **Retention boosts** (all optional, off by default; `ExportSettings.hook_text/cold_open/cut_pauses`):
+  an export plays a list of source `Segment`s (`clipping/timeline.py`, pure): `remove_pauses` shortens
+  silences between words > 0.45 s to 0.2 s; `with_cold_open` puts a 1.5-6 s teaser first: Claude's
+  `teaser` quote from AI highlights (`Clip.teaser`, located with `find_quote`), else `pick_teaser`
+  (loudest non-opening sentence via `signals.loudness_between`, then `!`/`?`). `workers.tasks.clip_segments`
+  builds the list; `ffmpeg.cut_segments` renders it (trim/atrim + concat from one seeked input).
+  `build_ass`/`build_srt` take `segments=` so captions follow the edit (`map_words`); the `.srt`
+  endpoint takes `?cut_pauses=&cold_open=` to match a download. `hook_text` draws `Clip.title` as a
+  boxed top-third ASS event for the first 3 s (`hook_event`). `export_key` includes the title/teaser
+  when those options are on. Titles: the description call also returns 3 `titles`
+  (`Clip.title_options`); `PUT /api/clips/{id}/title` sets the clip title (= hook text).
+  AI highlights take `{"short": true}` for the "short & loopable" style (20-45 s, loop-friendly
+  endings; `system_prompt(short=...)`, `tasks.SHORT_LENGTHS`).
 - **Captions** (`captions/`): `ExportSettings.captions` (`CaptionSettings`: font, colours,
   size, position, words per line, uppercase) → `captions/ass.py::build_ass` (pure: words in the
   clip range, rebased to 0, grouped into pages of N words broken at sentence ends/pauses; one
@@ -133,7 +146,8 @@ backend/twapza/
   clipping/signals.py  audio energy profile/score, PySceneDetect scene cuts
   clipping/dedupe.py   pure: overlap metrics + greedy NMS
   clipping/highlights.py  ask_for_candidates() (concurrent chunks), refine(), build_highlights()
-  clipping/descriptions.py  credit_text/compose/normalize_hashtags/parse_copy (pure), ClaudeDescriber
+  clipping/descriptions.py  credit_text/compose/normalize_hashtags/parse_copy/clean_titles (pure), ClaudeDescriber
+  clipping/timeline.py pure: Segment, remove_pauses, with_cold_open, map_words, find_quote, pick_teaser
   importing/youtube.py YouTube link parsing, yt-dlp info lookup + download (ImportFailed)
   captions/            style.py (CaptionSettings, bundled FONTS), ass.py (pure ASS generation), srt.py, fonts/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
@@ -230,6 +244,7 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 6. ✅ YouTube Shorts focus: YouTube link import (yt-dlp), whole-frame 9:16 fit by default
    (blur / black bars; crop optional), subtitles on by default + .srt download.
 7. ✅ Clip descriptions (Claude) with an exact credit to the original creator (editable).
+8. ✅ Optional retention boosts: hook text, cold open, cut pauses; title ideas; short & loopable AI style.
 
 Possible next steps: face-tracked vertical crop, editable caption text, hosted
 transcription backend, S3 storage backend, auth for multi-user hosting.

@@ -7,7 +7,7 @@ explicit input/output paths and never modifies its input.
 import json
 import subprocess
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -253,6 +253,48 @@ def cut_clip(src: Path, dst: Path, start: float, end: float, *, preset: str = "v
          "-c:a", "aac", "-b:a", "160k",
          "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", "-f", "mp4", str(dst)],
         duration=duration, on_progress=on_progress,
+    )
+
+
+def cut_segments(src: Path, dst: Path, segments: Sequence[tuple[float, float]], *,
+                 has_audio: bool = True, preset: str = "veryfast", crf: int = 20,
+                 video_filter: str | None = None,
+                 on_progress: ProgressCallback | None = None) -> None:
+    """Render ``segments`` (source ``(start, end)`` pairs, played in order) as one new mp4.
+
+    One segment is a plain ``cut_clip``. Several are trimmed from a single seeked input
+    (so a 3-hour source isn't decoded from the start) and joined with the concat filter;
+    ``video_filter`` is applied to the joined video.
+    """
+    segments = [(float(a), float(b)) for a, b in segments if b - a > 0.01]
+    if not segments:
+        raise MediaError("Nothing to render: the clip is empty.")
+    if len(segments) == 1:
+        cut_clip(src, dst, *segments[0], preset=preset, crf=crf, video_filter=video_filter,
+                 on_progress=on_progress)
+        return
+    base = min(a for a, _ in segments)
+    span = max(b for _, b in segments) - base
+    parts, labels = [], []
+    for i, (a, b) in enumerate(segments):
+        rel = f"start={a - base:.3f}:end={b - base:.3f}"
+        parts.append(f"[0:v:0]trim={rel},setpts=PTS-STARTPTS[v{i}]")
+        labels.append(f"[v{i}]")
+        if has_audio:
+            parts.append(f"[0:a:0]atrim={rel},asetpts=PTS-STARTPTS[a{i}]")
+            labels.append(f"[a{i}]")
+    n = len(segments)
+    joined = "[vj][aout]" if has_audio else "[vj]"
+    parts.append(f"{''.join(labels)}concat=n={n}:v=1:a={1 if has_audio else 0}{joined}")
+    parts.append(f"[vj]{video_filter or 'null'}[vout]")
+    audio = ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"] if has_audio else []
+    total = sum(b - a for a, b in segments)
+    run_ffmpeg(
+        ["-ss", f"{base:.3f}", "-t", f"{span + 0.1:.3f}", "-i", str(src),
+         "-filter_complex", ";".join(parts), "-map", "[vout]", *audio,
+         "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
+         "-movflags", "+faststart", "-f", "mp4", str(dst)],
+        duration=total, on_progress=on_progress,
     )
 
 

@@ -63,6 +63,14 @@ def test_parse_copy_is_tolerant():
     assert len(parse_copy(json.dumps({"description": "x" * 2000, "hashtags": []})).description) == 600
 
 
+def test_clean_titles():
+    from twapza.clipping.descriptions import clean_titles
+
+    assert clean_titles(['"Big reveal"', "big REVEAL", " A  #shorts title ", "", "x" * 80, "four"]) == \
+        ["Big reveal", "A title", "x" * 59 + "…"]
+    assert clean_titles("nope") == [] and clean_titles(None) == []
+
+
 def test_fallback_copy():
     c = fallback_copy(title="The grub", hook="It tasted like coconut", text="...")
     assert c.description == "The grub\n“It tasted like coconut”\nWatch the full video, linked below 👇"
@@ -176,7 +184,8 @@ def test_credit_can_be_edited_and_shows_in_the_description(client, clip):
 def test_claude_writes_and_saves_descriptions(client, clip):
     pid = clip["project_id"]
     client.patch(f"/api/projects/{pid}", json={"source_channel": "Joe Fazer", "source_title": "Jungle"})
-    fake = FakeDescriber([json.dumps({"description": "First", "hashtags": ["jungle"]}),
+    fake = FakeDescriber([json.dumps({"description": "First", "hashtags": ["jungle"],
+                                      "titles": ["He ate WHAT?", "Day 3 in the jungle #shorts", "he ate what?"]}),
                           json.dumps({"description": "Second", "hashtags": []}),
                           "garbage"])
     _use(client, fake)
@@ -186,6 +195,7 @@ def test_claude_writes_and_saves_descriptions(client, clip):
     assert r.json() == {
         "text": "First\n\nClips used from Joe Fazer’s video “Jungle”\n\n#jungle #shorts",
         "description": "First", "hashtags": ["#jungle", "#shorts"],
+        "titles": ["He ate WHAT?", "Day 3 in the jungle"],
         "credit": "Clips used from Joe Fazer’s video “Jungle”", "ai": True,
     }
     assert "Original creator: Joe Fazer" in fake.prompts[0] and "w1" in fake.prompts[0]
@@ -196,9 +206,17 @@ def test_claude_writes_and_saves_descriptions(client, clip):
     assert r.status_code == 502 and "usable description" in r.json()["detail"]
     assert client.get(f"/api/clips/{clip['id']}/description").json()["description"] == "Second"
 
+    # A new answer without titles keeps the earlier ones.
+    assert client.get(f"/api/clips/{clip['id']}/description").json()["titles"] == ["He ate WHAT?", "Day 3 in the jungle"]
+
+    # Picking a title makes it the clip's title (used as hook text).
+    r = client.put(f"/api/clips/{clip['id']}/title", json={"title": "  He ate   WHAT? "})
+    assert r.status_code == 200 and r.json()["title"] == "He ate WHAT?"
+
     # Trimming makes the saved description stale, so it is dropped.
     client.patch(f"/api/clips/{clip['id']}", json={"start": clip["start"], "end": clip["end"] - 2})
-    assert client.get(f"/api/clips/{clip['id']}/description").json()["ai"] is False
+    after = client.get(f"/api/clips/{clip['id']}/description").json()
+    assert after["ai"] is False and after["titles"] == ["He ate WHAT?"]  # falls back to the clip title
 
 
 @requires_ffmpeg

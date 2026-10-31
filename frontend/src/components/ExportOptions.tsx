@@ -8,7 +8,28 @@ export const DEFAULT_EXPORT: ExportSettings = {
   vertical_fit: "blur",
   upscale_1080: true,
   captions: DEFAULT_CAPTIONS,
+  hook_text: false,
+  cold_open: false,
+  cut_pauses: false,
 };
+
+const BOOSTS: { key: "hook_text" | "cold_open" | "cut_pauses"; title: string; hint: string }[] = [
+  {
+    key: "hook_text",
+    title: "Hook text",
+    hint: "The clip's title in bold at the top for the first 3 seconds. Pick a title under Description.",
+  },
+  {
+    key: "cold_open",
+    title: "Cold open",
+    hint: "Starts with the clip's most gripping line as a 2–5 second teaser, then plays the clip.",
+  },
+  {
+    key: "cut_pauses",
+    title: "Cut pauses",
+    hint: "Removes silences between words for snappier pacing (jump cuts).",
+  },
+];
 
 /** Shorter side of the source in pixels, or 0 if unknown. */
 export const shortSide = (p: Project) => Math.min(p.width ?? 0, p.height ?? 0);
@@ -104,6 +125,33 @@ export function ExportOptions({ project, value, onChange, disabled }: Props) {
           </label>
         )
       )}
+
+      <div className="space-y-2 border-t border-slate-200 pt-4">
+        <p className="text-sm font-medium">
+          Boost retention <span className="font-normal text-slate-500">(optional, applied when you download)</span>
+        </p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {BOOSTS.map(({ key, title, hint }) => (
+            <label
+              key={key}
+              className={`flex cursor-pointer flex-col rounded-lg border px-3 py-2 text-sm transition ${
+                value[key] ? "border-indigo-600 bg-indigo-50" : "border-slate-300 bg-white hover:border-slate-400"
+              }`}
+            >
+              <span className="flex items-center gap-2 font-medium">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-indigo-600"
+                  checked={value[key]}
+                  onChange={(e) => set({ [key]: e.target.checked })}
+                />
+                {title}
+              </span>
+              <span className="pl-6 text-slate-500">{hint}</span>
+            </label>
+          ))}
+        </div>
+      </div>
 
       <div className="space-y-3 border-t border-slate-200 pt-4">
         <label className="flex items-center gap-2 text-sm font-medium">

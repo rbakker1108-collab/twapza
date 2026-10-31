@@ -14,6 +14,10 @@ YouTube Shorts (and TikTok / Instagram Reels). Paste a link to your video, or up
   your colours, size, position and words on screen), plus a `.srt` file per clip.
 - **YouTube descriptions** for each clip: Claude writes a hook and hashtags, and Twapza adds a
   credit to the original creator (name, video and channel links), ready to copy.
+- **Optional retention boosts** for each download: **hook text** (the title in bold on the first
+  3 seconds), **cold open** (start with the clip's most gripping line as a teaser) and **cut pauses**
+  (remove silences for snappier pacing). Plus **title ideas** and a **short & loopable** AI mode
+  (20–45 s moments that replay smoothly).
 - Download clips one by one or all at once as a ZIP.
 
 Twapza is for **your own** videos: paste a link to a single YouTube video you posted (public or
@@ -51,10 +55,13 @@ The first transcription downloads the Whisper model (`small`, ~500 MB) once.
    (large uploads can be paused; choosing the same file again resumes, even after a reload).
 2. Twapza builds a preview and **transcribes** the video in the background (progress is shown).
 3. Pick a **download format**: vertical with blurred background (default), black bars or centre
-   crop, or the original shape; subtitles on (default) or off, and their style.
-4. **AI highlights** tab → **Find highlights** → review the ranked list, play, **Trim**,
+   crop, or the original shape; subtitles on (default) or off, and their style. Optionally tick
+   **Hook text**, **Cold open** and/or **Cut pauses** (all off by default; try them on a few Shorts
+   and compare "Viewed vs. swiped away" in YouTube Studio).
+4. **AI highlights** tab → **Find highlights** (tick **Short & loopable** for 20–45 s moments) → review the ranked list, play, **Trim**,
    **Download** (or **Download all (ZIP)**). **Subtitles (.srt)** gives a subtitle file to
-   upload alongside the Short. **Description** gives a ready-to-paste YouTube description.
+   upload alongside the Short. **Description** gives a ready-to-paste YouTube description and title ideas;
+   **Use as hook text** puts a title on the video when **Hook text** is on.
    The credit at the bottom comes from **Original creator** on the project page: filled in
    automatically for YouTube links, and editable (fill it in yourself for uploaded files).
    **Simple clips** tab → choose a length → **Generate clips**.

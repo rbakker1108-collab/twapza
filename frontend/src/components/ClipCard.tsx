@@ -66,10 +66,10 @@ export function ClipCard({ clip, proxyUrl, settings }: Props) {
       >
         Description
       </button>
-      {describing && <DescriptionPanel clipId={clip.id} />}
+      {describing && <DescriptionPanel clipId={clip.id} currentTitle={clip.title} />}
       {clip.text && (
         <a
-          href={api.subtitlesUrl(clip.id)}
+          href={api.subtitlesUrl(clip.id, settings)}
           download
           className="text-center text-sm text-indigo-700 hover:underline"
           title="Subtitle file to upload to YouTube or TikTok"

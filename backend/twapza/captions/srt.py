@@ -2,7 +2,8 @@
 
 from collections.abc import Sequence
 
-from twapza.captions.ass import HOLD, clip_words, group_words
+from twapza.captions.ass import HOLD, rebase_words, group_words
+from twapza.clipping.timeline import Segment
 from twapza.transcription.base import Word
 
 
@@ -14,13 +15,16 @@ def srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def build_srt(words: Sequence[Word], *, clip_start: float, clip_end: float,
-              max_words: int = 7) -> str | None:
-    """Subtitle cues of up to ``max_words`` (broken at sentence ends/pauses), times relative to the clip."""
-    pages = group_words(clip_words(words, clip_start, clip_end), max_words)
+def build_srt(words: Sequence[Word], *, clip_start: float | None = None, clip_end: float | None = None,
+              segments: Sequence[Segment] | None = None, max_words: int = 7) -> str | None:
+    """Subtitle cues of up to ``max_words`` (broken at sentence ends/pauses), times relative to the clip.
+
+    For an edited clip (cut pauses / cold open) pass its ``segments`` instead of the range.
+    """
+    timed, length = rebase_words(words, clip_start, clip_end, segments)
+    pages = group_words(timed, max_words)
     if not pages:
         return None
-    length = clip_end - clip_start
     cues = []
     for i, page in enumerate(pages):
         next_start = pages[i + 1][0].start if i + 1 < len(pages) else length

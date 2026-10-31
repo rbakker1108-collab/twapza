@@ -157,7 +157,7 @@ def test_missing_score_defaults_and_text_is_cleaned():
 
 def test_schema_matches_parser_fields():
     props = HIGHLIGHT_SCHEMA["properties"]["clips"]["items"]["properties"]
-    assert set(props) == {"start", "end", "title", "hook", "score", "reason"}
+    assert set(props) == {"start", "end", "title", "hook", "score", "reason", "teaser"}
 
 
 # --- ClaudeHighlighter request shape ----------------------------------------------------

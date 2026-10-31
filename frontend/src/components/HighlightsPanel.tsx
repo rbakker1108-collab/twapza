@@ -18,6 +18,7 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
   const [clips, setClips] = useState<Clip[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [short, setShort] = useState(false);
   const running = !!job && !isFinished(job);
 
   useEffect(() => {
@@ -38,7 +39,7 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
   async function start() {
     setError(null);
     try {
-      await follow(await api.createAiClips(project.id));
+      await follow(await api.createAiClips(project.id, short));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Finding highlights failed.");
       setJob(null);
@@ -58,14 +59,29 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
         </div>
 
         {aiEnabled ? (
-          <button
-            type="button"
-            onClick={start}
-            disabled={running}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-wait disabled:bg-slate-300"
-          >
-            {clips.length ? "Find highlights again" : "Find highlights"}
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={start}
+              disabled={running}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-wait disabled:bg-slate-300"
+            >
+              {clips.length ? "Find highlights again" : "Find highlights"}
+            </button>
+            <label
+              className="flex items-center gap-2 text-sm"
+              title="Aims for 20–45 second moments that end on a punchline, reveal or question, so the Short replays smoothly."
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-indigo-600"
+                checked={short}
+                disabled={running}
+                onChange={(e) => setShort(e.target.checked)}
+              />
+              Short &amp; loopable <span className="text-slate-500">(20–45 s)</span>
+            </label>
+          </div>
         ) : (
           <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
             To use AI highlights, add your Claude API key to the <code>.env</code> file

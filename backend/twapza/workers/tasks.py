@@ -16,8 +16,9 @@ from twapza.captions.ass import build_ass
 from twapza.captions.style import FONTS_DIR
 from twapza.clipping.highlights import ask_for_candidates, build_highlights
 from twapza.clipping.llm import ClaudeHighlighter, HighlightFinder, chunk_transcript
-from twapza.clipping.signals import detect_scene_cuts, energy_from_wav
+from twapza.clipping.signals import detect_scene_cuts, energy_from_wav, loudness_between
 from twapza.clipping.simple import plan_simple_clips
+from twapza.clipping.timeline import Segment, find_quote, pick_teaser, remove_pauses, with_cold_open
 from twapza.config import get_settings
 from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
 from twapza.db.session import get_engine
@@ -103,6 +104,35 @@ def _clip(project_id: str, clip_id: str) -> Clip:
         return clip
 
 
+def clip_segments(project: Project, clip: Clip, transcript: Transcript | None, *,
+                  cut_pauses: bool = False, cold_open: bool = False) -> list[Segment]:
+    """The parts of the source an export plays, in order (see ``clipping/timeline.py``)."""
+    words = transcript.words if transcript else []
+    segments = [Segment(clip.start, clip.end)]
+    if cut_pauses and words:
+        segments = remove_pauses(words, clip.start, clip.end)
+    if cold_open and words:
+        segments = with_cold_open(segments, _teaser(project, clip, words))
+    return segments
+
+
+def _teaser(project: Project, clip: Clip, words: list) -> Segment | None:
+    """Claude's quoted line if it can be found in the clip, else the loudest punchy sentence."""
+    if clip.teaser:
+        found = find_quote(words, clip.teaser, clip.start, clip.end)
+        if found:
+            return found
+    loudness = None
+    storage = get_storage()
+    if project.has_audio and storage.exists(project.audio_key):
+        try:
+            with storage.read_path(project.audio_key) as wav:
+                loudness = loudness_between(wav, clip.start, clip.end)
+        except (OSError, ValueError):
+            log.exception("could not read loudness for %s", clip.id)
+    return pick_teaser(words, clip.start, clip.end, loudness)
+
+
 def render_export(project: Project, clip: Clip, settings: ExportSettings,
                   on_progress: Progress | None = None) -> str:
     """Render a clip with the given settings (if not already rendered). Returns its key."""
@@ -114,33 +144,24 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
         return key
     app = get_settings()
     vf = video_filter(settings, project.width or 0, project.height or 0)
+    transcript = load_transcript(project)
+    segments = clip_segments(project, clip, transcript, cut_pauses=settings.cut_pauses,
+                             cold_open=settings.cold_open)
+    hook = clip.title if settings.hook_text else None
     with storage.read_path(project.original_key) as src, \
             tempfile.TemporaryDirectory(prefix="twapza-ass-") as tmp:
-        if settings.captions:
-            ass_text = _captions_for(project, clip, settings, src)
+        if settings.captions or hook:
+            width, height = output_size(settings, *ffmpeg.probe(src).display_size)
+            ass_text = build_ass(transcript.words if transcript else [], segments=segments,
+                                 settings=settings.captions, hook=hook, width=width, height=height)
             if ass_text:
                 ass_path = Path(tmp) / "captions.ass"
                 ass_path.write_text(ass_text, encoding="utf-8")
                 vf = ffmpeg.join_filters(vf, ffmpeg.ass_filter(ass_path, FONTS_DIR))
         with storage.write_path(key) as dst:
-            ffmpeg.cut_clip(src, dst, clip.start, clip.end, preset=app.export_preset,
-                            crf=app.export_crf, video_filter=vf, on_progress=on_progress)
-    return key
-
-
-def _captions_for(project: Project, clip: Clip, settings: ExportSettings, src: Path) -> str | None:
-    """ASS subtitles for the clip, or None when nothing is said in it."""
-    transcript = load_transcript(project)
-    if transcript is None or not transcript.words:
-        return None
-    width, height = output_size(settings, *ffmpeg.probe(src).display_size)
-    return build_ass(transcript.words, clip_start=clip.start, clip_end=clip.end,
-                     settings=settings.captions, width=width, height=height)
-    app = get_settings()
-    vf = video_filter(settings, project.width or 0, project.height or 0)
-    with storage.read_path(project.original_key) as src, storage.write_path(key) as dst:
-        ffmpeg.cut_clip(src, dst, clip.start, clip.end, preset=app.export_preset,
-                        crf=app.export_crf, video_filter=vf, on_progress=on_progress)
+            ffmpeg.cut_segments(src, dst, [(seg.start, seg.end) for seg in segments],
+                                has_audio=project.has_audio is not False, preset=app.export_preset,
+                                crf=app.export_crf, video_filter=vf, on_progress=on_progress)
     return key
 
 
@@ -328,24 +349,32 @@ def load_scene_cuts(project: Project, on_progress: Progress | None = None) -> li
     return cuts
 
 
-def get_highlighter() -> HighlightFinder:
+SHORT_LENGTHS = (20.0, 45.0)  # the optional "short & loopable" style
+
+
+def get_highlighter(*, short: bool = False) -> HighlightFinder:
     """The Claude-backed highlight finder (replaced by a fake in tests)."""
     settings = get_settings()
     key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
     if not key:
         raise TaskError("AI highlights need a Claude API key. Add ANTHROPIC_API_KEY to your .env "
                         "file and restart Twapza.")
+    min_len, max_len = SHORT_LENGTHS if short else (settings.highlight_min_seconds,
+                                                     settings.highlight_max_seconds)
     return ClaudeHighlighter(api_key=key, model=settings.claude_model, effort=settings.claude_effort,
-                             max_per_chunk=settings.highlights_per_chunk)
+                             max_per_chunk=settings.highlights_per_chunk, short=short,
+                             min_len=min_len, max_len=max_len)
 
 
-def generate_ai_clips(job_id: str, project_id: str) -> None:
+def generate_ai_clips(job_id: str, project_id: str, short: bool = False) -> None:
     def body(progress: ProgressReporter) -> None:
         settings = get_settings()
         storage = get_storage()
         project = _get_project(project_id)
         _require_ready(project)
-        finder = get_highlighter()  # fail fast on a missing key
+        finder = get_highlighter(short=short)  # fail fast on a missing key
+        min_len, max_len = SHORT_LENGTHS if short else (settings.highlight_min_seconds,
+                                                         settings.highlight_max_seconds)
         duration = project.duration or 0
 
         progress.update(0, "Loading transcript", force=True)
@@ -369,16 +398,14 @@ def generate_ai_clips(job_id: str, project_id: str) -> None:
 
         candidates = ask_for_candidates(
             finder, chunks, video_title=project.filename, video_duration=duration,
-            min_len=settings.highlight_min_seconds, max_len=settings.highlight_max_seconds,
-            concurrency=settings.claude_concurrency,
+            min_len=min_len, max_len=max_len, concurrency=settings.claude_concurrency,
             on_progress=progress.stage(50, 90, f"Claude is reviewing {len(chunks)} part(s) of the video"),
         )
 
         progress.update(90, "Ranking moments", force=True)
         best = build_highlights(
             candidates, words=transcript.words, scene_cuts=cuts, energy=energy, duration=duration,
-            min_len=settings.highlight_min_seconds, max_len=settings.highlight_max_seconds,
-            limit=settings.max_highlights,
+            min_len=min_len, max_len=max_len, limit=settings.max_highlights,
         )
         if not best:
             raise TaskError("Claude didn't find any moments that would work as standalone clips.")
@@ -387,7 +414,7 @@ def generate_ai_clips(job_id: str, project_id: str) -> None:
             Clip(project_id=project_id, source=ClipSource.AI, index=i + 1, start=c.start, end=c.end,
                  suggested_start=c.start, suggested_end=c.end,
                  text=transcript.text_between(c.start, c.end), title=c.title, hook=c.hook,
-                 score=c.score, reason=c.reason)
+                 score=c.score, reason=c.reason, teaser=c.teaser or None)
             for i, c in enumerate(best)
         ]
         _replace_clips(project, ClipSource.AI, clips, progress.stage(92, 100, "Creating thumbnails"))

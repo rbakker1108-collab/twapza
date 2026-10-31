@@ -37,6 +37,7 @@ class ClipDescription(BaseModel):
     text: str               # ready to paste: description, credit, hashtags
     description: str
     hashtags: list[str]
+    titles: list[str]       # suggested Shorts titles (also usable as the hook text)
     credit: str | None
     ai: bool                # written by Claude (False = simple fallback text)
 
@@ -148,6 +149,15 @@ class ClipRead(BaseModel):
 
 class SimpleClipsRequest(BaseModel):
     target_seconds: float = Field(ge=15, le=180)
+
+
+class AiClipsRequest(BaseModel):
+    # Aim for 20-45 s moments whose ending loops back into the start (optional style).
+    short: bool = False
+
+
+class TitleRequest(BaseModel):
+    title: str = Field(max_length=100)
 
 
 class TrimRequest(BaseModel):

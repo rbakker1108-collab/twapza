@@ -5,7 +5,7 @@ import { api, type ExportSettings } from "../api/client";
 import { makeClip, makeProject } from "../test-fixtures";
 import { HighlightsPanel } from "./HighlightsPanel";
 
-const settings: ExportSettings = { aspect: "9:16", vertical_fit: "crop", upscale_1080: false, captions: null };
+const settings: ExportSettings = { aspect: "9:16", vertical_fit: "crop", upscale_1080: false, captions: null, hook_text: false, cold_open: false, cut_pauses: false };
 const ai = (i: number, over = {}) =>
   makeClip({ id: `a${i}`, source: "ai", index: i, start: 100 * i, end: 100 * i + 40, duration: 40,
              suggested_start: 100 * i, suggested_end: 100 * i + 40, title: `Moment ${i}`,
@@ -19,6 +19,19 @@ describe("HighlightsPanel", () => {
     render(<HighlightsPanel project={makeProject()} settings={settings} aiEnabled={false} />);
     expect(screen.getByText(/ANTHROPIC_API_KEY/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /find highlights/i })).toBeNull();
+  });
+
+  it("can ask for short, loopable highlights", async () => {
+    vi.spyOn(api, "listClips").mockResolvedValue([]);
+    const create = vi.spyOn(api, "createAiClips").mockRejectedValue(new Error("stop"));
+    render(<HighlightsPanel project={makeProject()} settings={settings} aiEnabled />);
+    const short = screen.getByRole("checkbox", { name: /short & loopable/i });
+    expect(short).not.toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Find highlights" }));
+    expect(create).toHaveBeenLastCalledWith("p1", false);
+    await userEvent.click(short);
+    await userEvent.click(screen.getByRole("button", { name: "Find highlights" }));
+    expect(create).toHaveBeenLastCalledWith("p1", true);
   });
 
   it("shows ranked highlights with title, hook, reason and score", async () => {

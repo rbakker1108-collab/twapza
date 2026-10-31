@@ -13,18 +13,12 @@ from dataclasses import dataclass
 
 from twapza.captions.style import FONTS, CaptionSettings
 from twapza.clipping.snapping import word_strength
+from twapza.clipping.timeline import Segment, TimedWord, map_words, total_length
 from twapza.transcription.base import Word
 
 PAGE_GAP = 0.6   # a pause longer than this (s) starts a new page
 HOLD = 0.4       # keep the last page up this long after its last word (s)
 SIZE_FACTOR = {"small": 0.06, "medium": 0.075, "large": 0.095}  # × short side of the frame
-
-
-@dataclass(frozen=True)
-class TimedWord:
-    text: str
-    start: float
-    end: float
 
 
 @dataclass(frozen=True)
@@ -105,32 +99,85 @@ def caption_events(words: Sequence[TimedWord], settings: CaptionSettings, clip_l
     return events
 
 
+HOOK_SECONDS = 3.0   # the hook text shows for the first few seconds
+HOOK_SIZE = 0.082    # × short side of the frame
+HOOK_MAX_CHARS = 70
+
+
+def rebase_words(words: Sequence[Word], clip_start: float | None, clip_end: float | None,
+            segments: Sequence[Segment] | None) -> tuple[list[TimedWord], float]:
+    """Words on the output timeline (escaped for ASS) and the clip's output length."""
+    if segments is None:
+        if clip_start is None or clip_end is None:
+            raise ValueError("give clip_start/clip_end or segments")
+        segments = [Segment(clip_start, clip_end)]
+    mapped = [TimedWord(escape_text(w.text), w.start, w.end) for w in map_words(words, segments)]
+    return [w for w in mapped if w.text], total_length(segments)
+
+
+def hook_event(text: str, length: float) -> Event | None:
+    """The hook title, faded in and out over the first ``HOOK_SECONDS``."""
+    text = escape_text(text)
+    if not text:
+        return None
+    if len(text) > HOOK_MAX_CHARS:
+        text = text[: HOOK_MAX_CHARS - 1].rsplit(" ", 1)[0] + "…"
+    end = min(HOOK_SECONDS, length)
+    return Event(start=0.0, end=end, text=f"{{\\fad(120,250)}}{text}") if end > 0.3 else None
+
+
 def build_ass(
     words: Sequence[Word],
     *,
-    clip_start: float,
-    clip_end: float,
-    settings: CaptionSettings,
+    clip_start: float | None = None,
+    clip_end: float | None = None,
+    segments: Sequence[Segment] | None = None,
+    settings: CaptionSettings | None,
     width: int,
     height: int,
+    hook: str | None = None,
 ) -> str | None:
-    """Complete ASS document for one clip at ``width``×``height``, or None if nothing is said."""
-    events = caption_events(clip_words(words, clip_start, clip_end), settings, clip_end - clip_start)
-    if not events:
+    """ASS document for one clip at ``width``×``height``, or None if there is nothing to show.
+
+    ``settings`` adds word-by-word captions; ``hook`` adds the hook title at the top
+    for the first seconds. The clip is ``[clip_start, clip_end]`` or, for an edited
+    clip (cut pauses / cold open), the ``segments`` played in order.
+    """
+    timed, length = rebase_words(words, clip_start, clip_end, segments)
+    events = caption_events(timed, settings, length) if settings else []
+    hook_ev = hook_event(hook, length) if hook else None
+    if not events and hook_ev is None:
         return None
 
-    family, multiplier = FONTS[settings.font]
     short = min(width, height)
     vertical = height > width
-    size = round(short * SIZE_FACTOR[settings.size] * multiplier)
     outline = max(2, round(short * 0.006))
     margin_lr = round(width * 0.06)
-    alignment, margin_v = {
-        # bottom sits above the TikTok/Shorts caption & button area on vertical video
-        "bottom": (2, round(height * (0.2 if vertical else 0.08))),
-        "middle": (5, 0),
-        "top": (8, round(height * (0.12 if vertical else 0.06))),
-    }[settings.position]
+    styles = []
+    if settings:
+        family, multiplier = FONTS[settings.font]
+        size = round(short * SIZE_FACTOR[settings.size] * multiplier)
+        alignment, margin_v = {
+            # bottom sits above the TikTok/Shorts caption & button area on vertical video
+            "bottom": (2, round(height * (0.2 if vertical else 0.08))),
+            "middle": (5, 0),
+            "top": (8, round(height * (0.12 if vertical else 0.06))),
+        }[settings.position]
+        styles.append(
+            f"Style: Caption,{family},{size},{ass_color(settings.text_color)},{ass_color(settings.text_color)},"
+            f"{ass_color(settings.outline_color)},&H80000000,0,0,0,0,100,100,0,0,1,{outline},"
+            f"{max(1, outline // 2)},{alignment},{margin_lr},{margin_lr},{margin_v},1")
+    if hook_ev:
+        family, multiplier = FONTS[settings.font if settings else "montserrat"]
+        size = round(short * HOOK_SIZE * multiplier)
+        # Top third, clear of the platform UI; centre when the captions already use the top.
+        top = not (settings and settings.position == "top")
+        alignment, margin_v = (8, round(height * (0.14 if vertical else 0.07))) if top else (5, 0)
+        box = max(4, round(size * 0.28))
+        # BorderStyle 3 = opaque box behind the text (drawn in the outline colour).
+        styles.append(
+            f"Style: Hook,{family},{size},&H00FFFFFF,&H00FFFFFF,&H33000000,&H33000000,0,0,0,0,"
+            f"100,100,0,0,3,{box},0,{alignment},{round(width * 0.09)},{round(width * 0.09)},{margin_v},1")
 
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -142,10 +189,12 @@ YCbCr Matrix: TV.709
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,{family},{size},{ass_color(settings.text_color)},{ass_color(settings.text_color)},{ass_color(settings.outline_color)},&H80000000,0,0,0,0,100,100,0,0,1,{outline},{max(1, outline // 2)},{alignment},{margin_lr},{margin_lr},{margin_v},1
+{chr(10).join(styles)}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     lines = [f"Dialogue: 0,{ass_time(e.start)},{ass_time(e.end)},Caption,,0,0,0,,{e.text}" for e in events]
+    if hook_ev:
+        lines.append(f"Dialogue: 1,{ass_time(hook_ev.start)},{ass_time(hook_ev.end)},Hook,,0,0,0,,{hook_ev.text}")
     return header + "\n".join(lines) + "\n"

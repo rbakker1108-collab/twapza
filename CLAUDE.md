@@ -104,7 +104,7 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   silences between words > 0.45 s to 0.2 s; `with_cold_open` puts a 1.5-6 s teaser first: Claude's
   `teaser` quote from AI highlights (`Clip.teaser`, located with `find_quote`), else `pick_teaser`
   (loudest non-opening sentence via `signals.loudness_between`, then `!`/`?`). `workers.tasks.clip_segments`
-  builds the list; `ffmpeg.cut_segments` renders it (trim/atrim + concat from one seeked input).
+  builds the list; `ffmpeg.cut_segments` renders it: each forward-moving run is one seeked input decoded once (`select` on the frame grid + sample-exact `atrim`), runs joined with `concat`. Never split one input into many `trim` branches: ffmpeg buffers raw frames (GBs) and Docker OOM-kills it.
   `build_ass`/`build_srt` take `segments=` so captions follow the edit (`map_words`); the `.srt`
   endpoint takes `?cut_pauses=&cold_open=` to match a download. `hook_text` draws `Clip.title` as a
   boxed top-third ASS event for the first 3 s (`hook_event`). `export_key` includes the title/teaser

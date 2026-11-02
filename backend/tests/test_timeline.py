@@ -251,3 +251,41 @@ def test_short_style_prompt():
     assert "between 15 and 90 seconds" in default and "loops well" not in default
     assert "between 20 and 45 seconds" in short and "loops well" in short
     assert "teaser:" in default
+
+
+def test_runs_split_where_playback_jumps_back():
+    assert ffmpeg._runs([(40, 44), (5, 6), (7, 9), (9, 10)]) == [[(40, 44)], [(5, 6), (7, 9), (9, 10)]]
+    assert str(ffmpeg._frame_rate(29.97002997)) == "30000/1001"
+    assert ffmpeg._frame_rate(None) == 30 and ffmpeg._frame_rate(25.0) == 25
+
+
+@requires_ffmpeg
+def test_many_cuts_keep_audio_and_video_in_sync(tmp_path):
+    """Lots of segments at 29.97 fps: audio and video must end up the same length."""
+    src = tmp_path / "ntsc.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=30000/1001:d=40",
+                    "-f", "lavfi", "-i", "sine=f=300:d=40", "-c:v", "libx264", "-preset", "ultrafast",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(src)], check=True)
+    segments = [(30.0, 33.2)] + [(2 + i * 1.37, 2 + i * 1.37 + 0.91) for i in range(25)]
+    out = tmp_path / "cut.mp4"
+    ffmpeg.cut_segments(src, out, segments, fps=ffmpeg.probe(src).fps, preset="ultrafast")
+    streams = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,duration",
+                              "-of", "csv=p=0", str(out)], check=True, capture_output=True, text=True).stdout
+    durations = {kind: float(d) for kind, d in (line.split(",") for line in streams.split())}
+    expected = sum(b - a for a, b in segments)
+    assert durations["video"] == pytest.approx(expected, abs=0.1)
+    assert abs(durations["video"] - durations["audio"]) < 1 / 29.97 + 0.03
+
+
+def test_killed_ffmpeg_gets_a_readable_message(monkeypatch):
+    class Killed:
+        def __init__(self, *a, **kw):
+            import io
+            self.stdout = io.StringIO("")
+
+        def wait(self):
+            return -9
+
+    monkeypatch.setattr(ffmpeg.subprocess, "Popen", Killed)
+    with pytest.raises(ffmpeg.MediaError, match="out of memory"):
+        ffmpeg.run_ffmpeg(["-version"])

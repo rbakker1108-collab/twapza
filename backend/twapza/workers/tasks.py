@@ -160,7 +160,8 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
                 vf = ffmpeg.join_filters(vf, ffmpeg.ass_filter(ass_path, FONTS_DIR))
         with storage.write_path(key) as dst:
             ffmpeg.cut_segments(src, dst, [(seg.start, seg.end) for seg in segments],
-                                has_audio=project.has_audio is not False, preset=app.export_preset,
+                                has_audio=project.has_audio is not False, fps=project.fps,
+                                preset=app.export_preset,
                                 crf=app.export_crf, video_filter=vf, on_progress=on_progress)
     return key
 

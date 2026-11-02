@@ -135,7 +135,10 @@ def run_ffmpeg(
         stderr = errfile.read()
     if returncode != 0:
         tail = "\n".join(stderr.strip().splitlines()[-5:])
-        raise MediaError(f"Video processing failed: {tail or 'unknown ffmpeg error'}")
+        if not tail and returncode in (-9, 137):
+            raise MediaError("Video processing was stopped by the system, most likely because it ran "
+                             "out of memory. Give Docker more memory (Settings → Resources) and try again.")
+        raise MediaError(f"Video processing failed: {tail or f'ffmpeg exited with code {returncode}'}")
     if on_progress:
         on_progress(1.0)
 
@@ -256,15 +259,35 @@ def cut_clip(src: Path, dst: Path, start: float, end: float, *, preset: str = "v
     )
 
 
+def _frame_rate(fps: float | None) -> Fraction:
+    """The source frame rate as an exact fraction (29.97 → 30000/1001); 30 if unknown."""
+    if not fps or fps <= 0 or fps > 240:
+        return Fraction(30)
+    return Fraction(fps).limit_denominator(1001)
+
+
+def _runs(segments: list[tuple[float, float]]) -> list[list[tuple[float, float]]]:
+    """Split into runs that move forward through the source (a cold-open teaser starts a run)."""
+    runs: list[list[tuple[float, float]]] = []
+    for seg in segments:
+        if runs and seg[0] >= runs[-1][-1][1] - 1e-6:
+            runs[-1].append(seg)
+        else:
+            runs.append([seg])
+    return runs
+
+
 def cut_segments(src: Path, dst: Path, segments: Sequence[tuple[float, float]], *,
-                 has_audio: bool = True, preset: str = "veryfast", crf: int = 20,
-                 video_filter: str | None = None,
+                 has_audio: bool = True, fps: float | None = None, preset: str = "veryfast",
+                 crf: int = 20, video_filter: str | None = None,
                  on_progress: ProgressCallback | None = None) -> None:
     """Render ``segments`` (source ``(start, end)`` pairs, played in order) as one new mp4.
 
-    One segment is a plain ``cut_clip``. Several are trimmed from a single seeked input
-    (so a 3-hour source isn't decoded from the start) and joined with the concat filter;
-    ``video_filter`` is applied to the joined video.
+    One segment is a plain ``cut_clip``. Otherwise each forward-moving run of segments is
+    one seeked input that is decoded once: ``select`` keeps the video frames inside the
+    segments (boundaries snapped to the frame grid so audio and video stay in sync) and
+    ``atrim`` cuts the audio exactly. Runs (e.g. a cold-open teaser, then the clip) are
+    joined with ``concat``. Nothing is buffered, so memory stays flat for long clips.
     """
     segments = [(float(a), float(b)) for a, b in segments if b - a > 0.01]
     if not segments:
@@ -273,25 +296,40 @@ def cut_segments(src: Path, dst: Path, segments: Sequence[tuple[float, float]], 
         cut_clip(src, dst, *segments[0], preset=preset, crf=crf, video_filter=video_filter,
                  on_progress=on_progress)
         return
-    base = min(a for a, _ in segments)
-    span = max(b for _, b in segments) - base
-    parts, labels = [], []
-    for i, (a, b) in enumerate(segments):
-        rel = f"start={a - base:.3f}:end={b - base:.3f}"
-        parts.append(f"[0:v:0]trim={rel},setpts=PTS-STARTPTS[v{i}]")
-        labels.append(f"[v{i}]")
+
+    rate = _frame_rate(fps)
+    snap = lambda t: float(round(Fraction(t) * rate) / rate)  # noqa: E731 - to the frame grid
+    inputs: list[str] = []
+    graph: list[str] = []
+    joined: list[str] = []
+    total = 0.0
+    for r, run in enumerate(_runs(segments)):
+        base = run[0][0]
+        rel = [(snap(a - base), snap(b - base)) for a, b in run]
+        rel = [(a, b) for a, b in rel if b > a]
+        if not rel:
+            continue
+        span = rel[-1][1]
+        total += sum(b - a for a, b in rel)
+        inputs += ["-ss", f"{base:.3f}", "-t", f"{span + 0.5:.3f}", "-i", str(src)]
+        half = float(Fraction(1, 2) / rate)  # compare at frame midpoints: robust to rounding
+        keep = "+".join(f"between(t,{a - half:.6f},{b - half:.6f})" for a, b in rel)
+        graph.append(f"[{r}:v:0]fps={rate},select='{keep}',setpts=N/FRAME_RATE/TB[v{r}]")
+        joined.append(f"[v{r}]")
         if has_audio:
-            parts.append(f"[0:a:0]atrim={rel},asetpts=PTS-STARTPTS[a{i}]")
-            labels.append(f"[a{i}]")
-    n = len(segments)
-    joined = "[vj][aout]" if has_audio else "[vj]"
-    parts.append(f"{''.join(labels)}concat=n={n}:v=1:a={1 if has_audio else 0}{joined}")
-    parts.append(f"[vj]{video_filter or 'null'}[vout]")
+            graph.append(f"[{r}:a:0]asplit={len(rel)}" + "".join(f"[s{r}_{k}]" for k in range(len(rel))))
+            for k, (a, b) in enumerate(rel):
+                graph.append(f"[s{r}_{k}]atrim=start={a:.6f}:end={b:.6f},asetpts=PTS-STARTPTS[t{r}_{k}]")
+            graph.append("".join(f"[t{r}_{k}]" for k in range(len(rel)))
+                         + f"concat=n={len(rel)}:v=0:a=1[a{r}]")
+            joined.append(f"[a{r}]")
+    n = len(joined) // (2 if has_audio else 1)
+    out = "[vj][aout]" if has_audio else "[vj]"
+    graph.append(f"{''.join(joined)}concat=n={n}:v=1:a={1 if has_audio else 0}{out}")
+    graph.append(f"[vj]{video_filter or 'null'}[vout]")
     audio = ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"] if has_audio else []
-    total = sum(b - a for a, b in segments)
     run_ffmpeg(
-        ["-ss", f"{base:.3f}", "-t", f"{span + 0.1:.3f}", "-i", str(src),
-         "-filter_complex", ";".join(parts), "-map", "[vout]", *audio,
+        [*inputs, "-filter_complex", ";".join(graph), "-map", "[vout]", *audio,
          "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
          "-movflags", "+faststart", "-f", "mp4", str(dst)],
         duration=total, on_progress=on_progress,

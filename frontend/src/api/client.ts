@@ -155,7 +155,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, NETWORK_ERROR);
   }
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+    let message =
+      res.status === 502 || res.status === 503 || res.status === 504
+        ? "Twapza's server isn't responding right now (it may be restarting). Wait a moment and try again."
+        : `Request failed (${res.status})`;
     try {
       const body = await res.json();
       const detail = body?.detail;

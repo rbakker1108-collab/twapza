@@ -127,6 +127,7 @@ tested on GPU hardware yet; if it fails to start, the CPU setup above always wor
 | Upload interrupted | Choose the same file again; it resumes. |
 | YouTube import fails ("blocking automated downloads", or a format error) | YouTube changes often. Update the downloader: `docker compose build --no-cache && docker compose up`. If it still fails, download the video from YouTube Studio and upload the file. |
 | "This video is private" / "requires sign-in" | Make the video public or unlisted for the import, or upload the file. |
+| "Twapza's server isn't responding" / 502 errors | Check `docker compose ps` (is `twapza-api` running?) and `docker compose logs --tail=50 twapza-api`. Restarting helps: `docker compose restart`. |
 | See what's happening | `docker compose logs -f twapza-worker` |
 
 ## About YouTube imports

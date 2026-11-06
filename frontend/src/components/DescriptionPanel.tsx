@@ -20,6 +20,7 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [hookTitle, setHookTitle] = useState<string | null>(currentTitle);
+  useEffect(() => setHookTitle(currentTitle), [currentTitle]);
 
   const show = (d: ClipDescription) => {
     setDesc(d);

@@ -17,7 +17,7 @@ const BOOSTS: { key: "hook_text" | "cold_open" | "cut_pauses"; title: string; hi
   {
     key: "hook_text",
     title: "Hook text",
-    hint: "The clip's title in bold at the top for the first 3 seconds. Pick a title under Description.",
+    hint: "Bold text at the top for the first 3 seconds. Set or pick it on each clip below before you download.",
   },
   {
     key: "cold_open",

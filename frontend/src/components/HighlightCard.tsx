@@ -5,6 +5,7 @@ import { formatDuration } from "../lib/format";
 import { isFinished, runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
 import { DescriptionPanel } from "./DescriptionPanel";
+import { HookTextEditor } from "./HookTextEditor";
 import { TrimControls } from "./TrimControls";
 
 interface Props {
@@ -74,6 +75,7 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
           end={playEnd}
           poster={clip.thumbnail_url}
           frame={vertical ? settings.vertical_fit : "original"}
+          hookText={settings.hook_text ? clip.title : null}
         />
       </div>
 
@@ -114,6 +116,8 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
             }}
           />
         )}
+
+        {settings.hook_text && <HookTextEditor clip={clip} onChange={onChange} />}
 
         {error && (
           <p role="alert" className="text-sm text-red-700">

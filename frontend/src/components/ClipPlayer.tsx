@@ -9,6 +9,8 @@ interface Props {
   end: number;
   poster?: string;
   frame?: PreviewFrame;
+  /** Preview of the hook text the download will show on its first seconds. */
+  hookText?: string | null;
 }
 
 /**
@@ -18,7 +20,7 @@ interface Props {
  * blurred copy of the thumbnail = fit with blurred background, `object-contain` on
  * black = fit with black bars.
  */
-export function ClipPlayer({ src, start, end, poster, frame = "original" }: Props) {
+export function ClipPlayer({ src, start, end, poster, frame = "original", hookText }: Props) {
   const ref = useRef<HTMLVideoElement>(null);
   const [active, setActive] = useState(false);
   const vertical = frame !== "original";
@@ -74,6 +76,16 @@ export function ClipPlayer({ src, start, end, poster, frame = "original" }: Prop
             </span>
           </span>
         </button>
+      )}
+      {hookText && (
+        <span
+          data-testid="hook-preview"
+          className="pointer-events-none absolute inset-x-[9%] top-[12%] text-center leading-tight"
+        >
+          <span className="box-decoration-clone rounded bg-black/80 px-1.5 py-0.5 text-[11px] font-extrabold text-white sm:text-xs">
+            {hookText}
+          </span>
+        </span>
       )}
     </div>
   );

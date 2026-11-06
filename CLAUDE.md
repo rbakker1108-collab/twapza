@@ -109,7 +109,9 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   endpoint takes `?cut_pauses=&cold_open=` to match a download. `hook_text` draws `Clip.title` as a
   boxed top-third ASS event for the first 3 s (`hook_event`). `export_key` includes the title/teaser
   when those options are on. Titles: the description call also returns 3 `titles`
-  (`Clip.title_options`); `PUT /api/clips/{id}/title` sets the clip title (= hook text).
+  (`Clip.title_options`); `PUT /api/clips/{id}/title` sets the clip title (= hook text). While the
+  option is ticked, every clip card shows `HookTextEditor` (edit the hook text, "Suggest" → title
+  ideas) and `ClipPlayer` previews it, so it is set *before* the one download.
   AI highlights take `{"short": true}` for the "short & loopable" style (20-45 s, loop-friendly
   endings; `system_prompt(short=...)`, `tasks.SHORT_LENGTHS`).
 - **Captions** (`captions/`): `ExportSettings.captions` (`CaptionSettings`: font, colours,
@@ -164,6 +166,7 @@ frontend/src/
   components/ExportOptions.tsx  download format picker (9:16 blur/bars/crop, original, 1080p upscale, subtitles)
   components/YoutubeImportForm.tsx  link + rights form (home page tab next to UploadForm)
   components/CreditEditor.tsx, DescriptionPanel.tsx  original-creator credit + per-clip description
+  components/HookTextEditor.tsx  per-clip hook text + Claude title ideas (shown while "Hook text" is on)
   components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview

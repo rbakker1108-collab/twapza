@@ -5,6 +5,7 @@ import { formatDuration } from "../lib/format";
 import { runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
 import { DescriptionPanel } from "./DescriptionPanel";
+import { HookTextEditor } from "./HookTextEditor";
 
 interface Props {
   clip: Clip;
@@ -12,7 +13,8 @@ interface Props {
   settings?: ExportSettings;
 }
 
-export function ClipCard({ clip, proxyUrl, settings }: Props) {
+export function ClipCard({ clip: initial, proxyUrl, settings }: Props) {
+  const [clip, setClip] = useState(initial);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [describing, setDescribing] = useState(false);
@@ -37,6 +39,7 @@ export function ClipCard({ clip, proxyUrl, settings }: Props) {
         end={clip.end}
         poster={clip.thumbnail_url}
         frame={settings?.aspect === "9:16" ? settings.vertical_fit : "original"}
+        hookText={settings?.hook_text ? clip.title : null}
       />
       <div className="flex items-baseline justify-between gap-2 text-sm">
         <span className="font-medium">Clip {clip.index}</span>
@@ -45,6 +48,7 @@ export function ClipCard({ clip, proxyUrl, settings }: Props) {
         </span>
       </div>
       {clip.text && <p className="line-clamp-3 text-sm text-slate-600">{clip.text}</p>}
+      {settings?.hook_text && <HookTextEditor clip={clip} onChange={setClip} />}
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}
@@ -66,7 +70,7 @@ export function ClipCard({ clip, proxyUrl, settings }: Props) {
       >
         Description
       </button>
-      {describing && <DescriptionPanel clipId={clip.id} currentTitle={clip.title} />}
+      {describing && <DescriptionPanel clipId={clip.id} currentTitle={clip.title} onTitleChange={setClip} />}
       {clip.text && (
         <a
           href={api.subtitlesUrl(clip.id, settings)}

@@ -34,6 +34,35 @@ export interface Clip {
   suggested_start: number | null;
   suggested_end: number | null;
   thumbnail_url: string;
+  /** Texts placed on the video in the clip editor. */
+  overlays: TextOverlay[];
+}
+
+export type OverlayStyle = "outline" | "box" | "plain";
+
+/** Mirrors api/schemas.py TextOverlay. Positions are fractions of the frame. */
+export interface TextOverlay {
+  id: string;
+  text: string;
+  /** Centre of the text, 0–1 across / down the frame. */
+  x: number;
+  y: number;
+  /** Font em as a fraction of the frame width (0.02–0.3). */
+  size: number;
+  font: CaptionFont;
+  color: string;
+  style: OverlayStyle;
+  /** Seconds from the clip's start; end null = until the clip ends. */
+  start: number;
+  end: number | null;
+}
+
+/** A caption word in the clip editor (text "" = hidden from captions). */
+export interface ClipWord {
+  start: number;
+  end: number;
+  text: string;
+  original: string;
 }
 
 export type Aspect = "original" | "9:16";
@@ -68,6 +97,12 @@ export interface ExportSettings {
   cold_open: boolean;
   /** and long pauses between words cut out. */
   cut_pauses: boolean;
+  /** Show the hook text for the whole clip (instead of the first 3 seconds). */
+  hook_full: boolean;
+  /** Cut out "um", "uh", … */
+  cut_fillers: boolean;
+  /** A bar along the top that fills up as the clip plays. */
+  progress_bar: boolean;
 }
 
 export interface Project {
@@ -214,8 +249,21 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
     }),
-  createAiClips: (projectId: string, short = false) =>
-    request<Job>(`/api/projects/${projectId}/ai-clips`, json({ short })),
+  createAiClips: (projectId: string, short = false, focus = "") =>
+    request<Job>(`/api/projects/${projectId}/ai-clips`, json({ short, focus: focus.trim() || null })),
+  setOverlays: (clipId: string, overlays: TextOverlay[]) =>
+    request<Clip>(`/api/clips/${clipId}/overlays`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overlays }),
+    }),
+  getClipWords: (clipId: string) => request<ClipWord[]>(`/api/clips/${clipId}/words`),
+  saveCorrections: (projectId: string, fixes: { start: number; text: string }[]) =>
+    request<Clip[]>(`/api/projects/${projectId}/corrections`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fixes }),
+    }),
   trimClip: (clipId: string, start: number, end: number) =>
     request<Clip>(`/api/clips/${clipId}`, {
       method: "PATCH",
@@ -229,10 +277,11 @@ export const api = {
   exportZip: (projectId: string, source: ClipSource, settings?: ExportSettings) =>
     request<Job>(`/api/projects/${projectId}/export-zip`, json({ source, settings })),
   /** Pass the export settings so the subtitle timing matches the download (cut pauses / cold open). */
-  subtitlesUrl: (clipId: string, settings?: Pick<ExportSettings, "cut_pauses" | "cold_open">) => {
+  subtitlesUrl: (clipId: string, settings?: Pick<ExportSettings, "cut_pauses" | "cold_open" | "cut_fillers">) => {
     const params = new URLSearchParams();
     if (settings?.cut_pauses) params.set("cut_pauses", "true");
     if (settings?.cold_open) params.set("cold_open", "true");
+    if (settings?.cut_fillers) params.set("cut_fillers", "true");
     const query = params.toString();
     return `/api/clips/${clipId}/subtitles.srt${query ? `?${query}` : ""}`;
   },

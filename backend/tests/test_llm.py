@@ -288,7 +288,9 @@ def test_real_sdk_request_on_the_wire():
     assert parse_highlights(out, chunk_start=0, chunk_end=60)[0].title == "T"
     assert seen["url"].endswith("/v1/messages?beta=true") or seen["url"].endswith("/v1/messages")
     assert "server-side-fallback-2026-07-01" in seen["headers"]["anthropic-beta"]
-    assert seen["headers"]["x-api-key"] == "sk-test"
+    # Older SDKs send x-api-key, newer ones Authorization: Bearer.
+    headers = seen["headers"]
+    assert headers.get("x-api-key", headers.get("authorization", "").removeprefix("Bearer ")) == "sk-test"
     body = seen["body"]
     assert body["model"] == "claude-sonnet-5-5" and body["stream"] is True
     assert body["fallbacks"] == "default"

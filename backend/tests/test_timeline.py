@@ -235,13 +235,13 @@ def test_short_style_and_teaser_reach_the_ai_job(client, monkeypatch, tmp_path, 
     r = client.post(f"/api/projects/{pid}/ai-clips", json={"short": True})
     assert r.status_code == 202
     assert client.get(f"/api/jobs/{r.json()['id']}").json()["status"] == "succeeded"
-    assert seen == {"short": True}
+    assert seen == {"short": True, "focus": None}
     with Session(get_engine()) as s:
         clip = s.exec(select(Clip).where(Clip.project_id == pid)).first()
         assert clip.teaser and clip.end - clip.start <= 45.5   # short style caps the length
 
     r = client.post(f"/api/projects/{pid}/ai-clips")              # no body = default style
-    assert r.status_code == 202 and seen == {"short": False}
+    assert r.status_code == 202 and seen == {"short": False, "focus": None}
 
 
 def test_short_style_prompt():

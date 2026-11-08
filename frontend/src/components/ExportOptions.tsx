@@ -11,13 +11,18 @@ export const DEFAULT_EXPORT: ExportSettings = {
   hook_text: false,
   cold_open: false,
   cut_pauses: false,
+  hook_full: false,
+  cut_fillers: false,
+  progress_bar: false,
 };
 
-const BOOSTS: { key: "hook_text" | "cold_open" | "cut_pauses"; title: string; hint: string }[] = [
+type Boost = "hook_text" | "cold_open" | "cut_pauses" | "cut_fillers" | "progress_bar";
+
+const BOOSTS: { key: Boost; title: string; hint: string }[] = [
   {
     key: "hook_text",
     title: "Hook text",
-    hint: "Bold text at the top for the first 3 seconds. Set or pick it on each clip below before you download.",
+    hint: "Bold text at the top. Set or pick it on each clip below before you download.",
   },
   {
     key: "cold_open",
@@ -28,6 +33,16 @@ const BOOSTS: { key: "hook_text" | "cold_open" | "cut_pauses"; title: string; hi
     key: "cut_pauses",
     title: "Cut pauses",
     hint: "Removes silences between words for snappier pacing (jump cuts).",
+  },
+  {
+    key: "cut_fillers",
+    title: "Remove filler words",
+    hint: "Cuts out “um”, “uh”, “ehm” and the hesitation around them.",
+  },
+  {
+    key: "progress_bar",
+    title: "Progress bar",
+    hint: "A thin bar along the top that fills up as the clip plays.",
   },
 ];
 
@@ -151,6 +166,19 @@ export function ExportOptions({ project, value, onChange, disabled }: Props) {
             </label>
           ))}
         </div>
+        {value.hook_text && (
+          <div className="flex flex-wrap items-center gap-4 pl-1 text-sm" role="radiogroup" aria-label="Show the hook text">
+            <span className="text-slate-600">Show the hook text:</span>
+            <label className="flex items-center gap-1.5">
+              <input type="radio" className="accent-indigo-600" checked={!value.hook_full} onChange={() => set({ hook_full: false })} />
+              First 3 seconds
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="radio" className="accent-indigo-600" checked={value.hook_full} onChange={() => set({ hook_full: true })} />
+              Whole clip
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="space-y-3 border-t border-slate-200 pt-4">

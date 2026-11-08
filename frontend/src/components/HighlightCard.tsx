@@ -4,6 +4,7 @@ import { api, type Clip, type ExportSettings, type Job } from "../api/client";
 import { formatDuration } from "../lib/format";
 import { isFinished, runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
+import { ClipEditor } from "./ClipEditor";
 import { DescriptionPanel } from "./DescriptionPanel";
 import { HookTextEditor } from "./HookTextEditor";
 import { TrimControls } from "./TrimControls";
@@ -15,6 +16,8 @@ interface Props {
   videoDuration: number;
   settings: ExportSettings;
   maxLength?: number;
+  /** Source width / height (for the editor's "original" format preview). */
+  sourceAspect?: number;
   onChange: (clip: Clip) => void;
 }
 
@@ -24,7 +27,8 @@ export function scoreTone(score: number) {
   return "bg-slate-200 text-slate-700";
 }
 
-export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, maxLength, onChange }: Props) {
+export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, maxLength, sourceAspect, onChange }: Props) {
+  const [editing, setEditing] = useState(false);
   const [trimming, setTrimming] = useState(false);
   const [describing, setDescribing] = useState(false);
   const [draft, setDraft] = useState<{ start: number; end: number } | null>(null);
@@ -145,6 +149,14 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
           </button>
           <button
             type="button"
+            onClick={() => setEditing(true)}
+            disabled={trimming}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+          >
+            Edit{clip.overlays.length ? ` (${clip.overlays.length} text${clip.overlays.length > 1 ? "s" : ""})` : ""}
+          </button>
+          <button
+            type="button"
             onClick={() => setDescribing(!describing)}
             aria-expanded={describing}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
@@ -169,6 +181,16 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
             onTitleChange={onChange}
           />}
       </div>
+      {editing && (
+        <ClipEditor
+          clip={clip}
+          settings={settings}
+          proxyUrl={proxyUrl}
+          sourceAspect={sourceAspect ?? 16 / 9}
+          onClose={() => setEditing(false)}
+          onSaved={onChange}
+        />
+      )}
     </article>
   );
 }

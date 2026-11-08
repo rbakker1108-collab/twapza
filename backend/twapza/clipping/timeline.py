@@ -23,6 +23,9 @@ MAX_GAP = 0.45       # silences longer than this (s) are shortened …
 KEEP_GAP = 0.2       # … to this much (split around the cut, so speech isn't clipped)
 MIN_SEGMENT = 0.08   # drop slivers shorter than this (s)
 TEASER_MIN, TEASER_MAX = 1.5, 6.0
+# Hesitation sounds removed by the optional "remove filler words" (English + Dutch/German).
+FILLERS = frozenset({"um", "umm", "uh", "uhh", "uhm", "erm", "er", "ah", "ahh", "hmm", "mm", "mhm",
+                     "eh", "ehm", "euh", "uhh", "ähm", "äh"})
 
 
 @dataclass(frozen=True)
@@ -51,24 +54,37 @@ def _clip_words(words: Sequence[Word], start: float, end: float) -> list[Word]:
             if w.text.strip() and w.end > start and w.start < end]
 
 
-def remove_pauses(words: Sequence[Word], start: float, end: float, *,
-                  max_gap: float = MAX_GAP, keep: float = KEEP_GAP) -> list[Segment]:
-    """``[start, end]`` without silences longer than ``max_gap`` (each shortened to ``keep``).
+def is_filler(word: Word) -> bool:
+    return re.sub(r"[^\w]", "", word.text.lower(), flags=re.UNICODE) in FILLERS
 
-    Silence before the first and after the last word is trimmed too (keeping
-    ``keep`` of lead-in and a little more tail so the last word can ring out).
+
+def remove_pauses(words: Sequence[Word], start: float, end: float, *,
+                  max_gap: float = MAX_GAP, keep: float = KEEP_GAP,
+                  pauses: bool = True, fillers: bool = False) -> list[Segment]:
+    """``[start, end]`` without long silences and/or filler words.
+
+    ``pauses``: silences longer than ``max_gap`` are shortened to ``keep``; silence
+    before the first and after the last word is trimmed too (keeping ``keep`` of lead-in
+    and a little more tail so the last word can ring out).
+    ``fillers``: "um", "uh", … are cut out together with the silence around them.
     """
-    spoken = _clip_words(words, start, end)
+    every = _clip_words(words, start, end)
+    spoken = [w for w in every if not (fillers and is_filler(w))]
     if not spoken:
         return [Segment(start, end)]
     half = keep / 2
     cuts: list[tuple[float, float]] = []
-    if spoken[0].start - start > max_gap:
+    if pauses and spoken[0].start - start > max_gap:
         cuts.append((start, spoken[0].start - keep))
+    elif fillers and any(is_filler(w) and w.start < spoken[0].start for w in every):
+        cuts.append((start, spoken[0].start - half))
     for a, b in zip(spoken, spoken[1:]):
-        if b.start - a.end > max_gap:
+        has_filler = fillers and any(is_filler(w) and a.end <= w.start < b.start for w in every)
+        if (pauses and b.start - a.end > max_gap) or (has_filler and b.start - a.end > keep):
             cuts.append((a.end + half, b.start - half))
-    if end - spoken[-1].end > max_gap + keep:
+    if pauses and end - spoken[-1].end > max_gap + keep:
+        cuts.append((spoken[-1].end + 2 * keep, end))
+    elif fillers and any(is_filler(w) and w.start >= spoken[-1].end for w in every):
         cuts.append((spoken[-1].end + 2 * keep, end))
 
     segments: list[Segment] = []
@@ -80,6 +96,22 @@ def remove_pauses(words: Sequence[Word], start: float, end: float, *,
     if end - cursor >= MIN_SEGMENT:
         segments.append(Segment(round(cursor, 3), round(end, 3)))
     return segments or [Segment(start, end)]
+
+
+def map_span(start: float, end: float, segments: Sequence[Segment]) -> list[tuple[float, float]]:
+    """Where the source span ``[start, end]`` plays in the edited clip (it can play in parts)."""
+    out: list[tuple[float, float]] = []
+    offset = 0.0
+    for seg in segments:
+        s, e = max(start, seg.start), min(end, seg.end)
+        if e - s > 0.01:
+            a, b = round(s - seg.start + offset, 3), round(e - seg.start + offset, 3)
+            if out and abs(out[-1][1] - a) < 0.005:  # contiguous: merge
+                out[-1] = (out[-1][0], b)
+            else:
+                out.append((a, b))
+        offset += seg.length
+    return out
 
 
 def with_cold_open(segments: Sequence[Segment], teaser: Segment | None) -> list[Segment]:

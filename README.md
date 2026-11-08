@@ -18,6 +18,10 @@ YouTube Shorts (and TikTok / Instagram Reels). Paste a link to your video, or up
   3 seconds), **cold open** (start with the clip's most gripping line as a teaser) and **cut pauses**
   (remove silences for snappier pacing). Plus **title ideas** and a **short & loopable** AI mode
   (20–45 s moments that replay smoothly).
+- **Clip editor:** drag your own texts onto the video (font, size, colour, outline or box, whole clip
+  or from–to), and fix words the transcription got wrong; what you see is what you download.
+- **Remove filler words** ("um", "uh"), a **progress bar**, hook text for the **whole clip**, and
+  **Look for…** to tell the AI what kind of moments you want. Your download settings are remembered.
 - Download clips one by one or all at once as a ZIP.
 
 Twapza is for **your own** videos: paste a link to a single YouTube video you posted (public or
@@ -58,8 +62,9 @@ The first transcription downloads the Whisper model (`small`, ~500 MB) once.
    crop, or the original shape; subtitles on (default) or off, and their style. Optionally tick
    **Hook text**, **Cold open** and/or **Cut pauses** (all off by default; try them on a few Shorts
    and compare "Viewed vs. swiped away" in YouTube Studio).
-4. **AI highlights** tab → **Find highlights** (tick **Short & loopable** for 20–45 s moments) → review the ranked list, play, **Trim**,
-   **Download** (or **Download all (ZIP)**). **Subtitles (.srt)** gives a subtitle file to
+4. **AI highlights** tab → optionally fill in **Look for** (e.g. "funny moments") → **Find highlights**
+   (tick **Short & loopable** for 20–45 s moments) → review the ranked list, play, **Trim**,
+   **Edit** (drag texts onto the video, fix captions), **Download** (or **Download all (ZIP)**). **Subtitles (.srt)** gives a subtitle file to
    upload alongside the Short. **Description** gives a ready-to-paste YouTube description and title ideas;
    With **Hook text** ticked, each clip shows its hook text (edit it, or **Suggest** for Claude's
    title ideas) and previews it on the clip, so you set it before downloading.

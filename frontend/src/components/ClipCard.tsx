@@ -4,6 +4,7 @@ import { api, type Clip, type ExportSettings, type Job } from "../api/client";
 import { formatDuration } from "../lib/format";
 import { runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
+import { ClipEditor } from "./ClipEditor";
 import { DescriptionPanel } from "./DescriptionPanel";
 import { HookTextEditor } from "./HookTextEditor";
 
@@ -11,10 +12,12 @@ interface Props {
   clip: Clip;
   proxyUrl: string;
   settings?: ExportSettings;
+  sourceAspect?: number;
 }
 
-export function ClipCard({ clip: initial, proxyUrl, settings }: Props) {
+export function ClipCard({ clip: initial, proxyUrl, settings, sourceAspect }: Props) {
   const [clip, setClip] = useState(initial);
+  const [editing, setEditing] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [describing, setDescribing] = useState(false);
@@ -64,6 +67,14 @@ export function ClipCard({ clip: initial, proxyUrl, settings }: Props) {
       </button>
       <button
         type="button"
+        onClick={() => setEditing(true)}
+        disabled={!settings}
+        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50"
+      >
+        Edit{clip.overlays.length ? ` (${clip.overlays.length} text${clip.overlays.length > 1 ? "s" : ""})` : ""}
+      </button>
+      <button
+        type="button"
         onClick={() => setDescribing(!describing)}
         aria-expanded={describing}
         className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50"
@@ -80,6 +91,16 @@ export function ClipCard({ clip: initial, proxyUrl, settings }: Props) {
         >
           Subtitles (.srt)
         </a>
+      )}
+      {editing && settings && (
+        <ClipEditor
+          clip={clip}
+          settings={settings}
+          proxyUrl={proxyUrl}
+          sourceAspect={sourceAspect ?? 16 / 9}
+          onClose={() => setEditing(false)}
+          onSaved={setClip}
+        />
       )}
     </article>
   );

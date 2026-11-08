@@ -114,7 +114,13 @@ export function SimpleClipsPanel({ project, settings, minSeconds = 15, maxSecond
             className={`grid gap-4 ${vertical ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-3"}`}
           >
             {clips.map((clip) => (
-              <ClipCard key={clip.id} clip={clip} proxyUrl={api.proxyUrl(project.id)} settings={settings} />
+              <ClipCard
+                key={clip.id}
+                clip={clip}
+                proxyUrl={api.proxyUrl(project.id)}
+                settings={settings}
+                sourceAspect={project.width && project.height ? project.width / project.height : undefined}
+              />
             ))}
           </div>
         </>

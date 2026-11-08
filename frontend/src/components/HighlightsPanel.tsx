@@ -19,6 +19,7 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [short, setShort] = useState(false);
+  const [focus, setFocus] = useState("");
   const running = !!job && !isFinished(job);
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
   async function start() {
     setError(null);
     try {
-      await follow(await api.createAiClips(project.id, short));
+      await follow(await api.createAiClips(project.id, short, focus));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Finding highlights failed.");
       setJob(null);
@@ -57,6 +58,23 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
             refined with audio energy and scene changes, then ranked.
           </p>
         </div>
+
+        {aiEnabled && (
+          <label className="block max-w-xl space-y-1 text-sm">
+            <span className="font-medium">
+              Look for <span className="font-normal text-slate-500">(optional)</span>
+            </span>
+            <input
+              type="text"
+              value={focus}
+              maxLength={300}
+              disabled={running}
+              onChange={(e) => setFocus(e.target.value)}
+              placeholder="e.g. funny moments, money tips, the story about the jungle"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2"
+            />
+          </label>
+        )}
 
         {aiEnabled ? (
           <div className="flex flex-wrap items-center gap-4">
@@ -116,6 +134,7 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
                 videoDuration={project.duration ?? clip.end}
                 settings={settings}
                 maxLength={maxLength}
+                sourceAspect={project.width && project.height ? project.width / project.height : undefined}
                 onChange={(next) => setClips((all) => all.map((c) => (c.id === next.id ? next : c)))}
               />
             ))}

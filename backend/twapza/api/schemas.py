@@ -1,6 +1,8 @@
+import json
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from twapza.exports import ExportSettings
 
@@ -118,6 +120,46 @@ class CompleteUploadResponse(BaseModel):
     job: JobRead
 
 
+class TextOverlay(BaseModel):
+    """A text placed on the video in the clip editor."""
+    id: str = Field(min_length=1, max_length=40)
+    text: str = Field(max_length=300)
+    x: float = Field(ge=0, le=1)       # centre, as a fraction of the frame width
+    y: float = Field(ge=0, le=1)       # centre, as a fraction of the frame height
+    size: float = Field(ge=0.02, le=0.3)  # font em as a fraction of the frame width
+    font: Literal["montserrat", "poppins", "anton", "bebas"] = "montserrat"
+    color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
+    style: Literal["outline", "box", "plain"] = "outline"
+    start: float = Field(default=0, ge=0)    # seconds from the clip's start
+    end: float | None = Field(default=None, ge=0)  # None = until the clip ends
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "TextOverlay":
+        if self.end is not None and self.end <= self.start:
+            raise ValueError("a text must end after it starts")
+        return self
+
+
+class OverlaysRequest(BaseModel):
+    overlays: list[TextOverlay] = Field(default_factory=list, max_length=30)
+
+
+class ClipWord(BaseModel):
+    start: float
+    end: float
+    text: str           # as shown in captions (after fixes; "" = hidden)
+    original: str       # as transcribed
+
+
+class WordFix(BaseModel):
+    start: float                          # the word's start time, identifies it
+    text: str = Field(max_length=60)      # "" hides the word in captions
+
+
+class CorrectionsRequest(BaseModel):
+    fixes: list[WordFix] = Field(max_length=2000)
+
+
 class ClipRead(BaseModel):
     id: str
     project_id: str
@@ -134,6 +176,7 @@ class ClipRead(BaseModel):
     suggested_start: float | None
     suggested_end: float | None
     thumbnail_url: str
+    overlays: list[TextOverlay] = []
 
     @classmethod
     def of(cls, clip: Clip) -> "ClipRead":
@@ -144,7 +187,22 @@ class ClipRead(BaseModel):
             suggested_start=clip.suggested_start, suggested_end=clip.suggested_end,
             # The start time in the URL busts the browser cache after a trim.
             thumbnail_url=f"/api/clips/{clip.id}/thumbnail?t={int(clip.start * 1000)}",
+            overlays=_overlays(clip.overlays),
         )
+
+
+def _overlays(raw: str | None) -> list["TextOverlay"]:
+    try:
+        items = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    out = []
+    for item in items if isinstance(items, list) else []:
+        try:
+            out.append(TextOverlay.model_validate(item))
+        except ValueError:
+            continue
+    return out
 
 
 class SimpleClipsRequest(BaseModel):
@@ -154,6 +212,8 @@ class SimpleClipsRequest(BaseModel):
 class AiClipsRequest(BaseModel):
     # Aim for 20-45 s moments whose ending loops back into the start (optional style).
     short: bool = False
+    # Optional: what kind of moments to look for, e.g. "funny moments" or "money tips".
+    focus: str | None = Field(default=None, max_length=300)
 
 
 class TitleRequest(BaseModel):

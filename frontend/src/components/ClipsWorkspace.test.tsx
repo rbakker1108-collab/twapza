@@ -43,6 +43,7 @@ describe("ClipsWorkspace", () => {
       expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", {
         aspect: "9:16", vertical_fit: "blur", upscale_1080: false, captions: null,
         hook_text: false, cold_open: false, cut_pauses: false,
+        hook_full: false, cut_fillers: false, progress_bar: false,
       }),
     );
 

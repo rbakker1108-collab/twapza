@@ -7,6 +7,28 @@ import { SimpleClipsPanel } from "./SimpleClipsPanel";
 
 type Tab = "ai" | "simple";
 
+const STORAGE_KEY = "twapza.downloadSettings";
+
+/** The last-used download settings (format, caption style, options), like a brand template. */
+export function loadSavedSettings(): ExportSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_EXPORT;
+    const saved = JSON.parse(raw) as Partial<ExportSettings>;
+    return { ...DEFAULT_EXPORT, ...saved, captions: saved.captions === undefined ? DEFAULT_EXPORT.captions : saved.captions };
+  } catch {
+    return DEFAULT_EXPORT;
+  }
+}
+
+function saveSettings(settings: ExportSettings) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    /* private mode / storage full: settings just aren't remembered */
+  }
+}
+
 interface Props {
   project: Project;
   config: PublicConfig | null;
@@ -15,7 +37,11 @@ interface Props {
 /** Download format (shared) + the two ways of making clips. */
 export function ClipsWorkspace({ project, config }: Props) {
   const [tab, setTab] = useState<Tab>("ai");
-  const [options, setOptions] = useState<ExportSettings>(DEFAULT_EXPORT);
+  const [options, setOptionsState] = useState<ExportSettings>(loadSavedSettings);
+  const setOptions = (next: ExportSettings) => {
+    setOptionsState(next);
+    saveSettings(next);
+  };
   const settings: ExportSettings = { ...options, upscale_1080: canUpscale(project) && options.upscale_1080 };
 
   const tabClass = (t: Tab) =>

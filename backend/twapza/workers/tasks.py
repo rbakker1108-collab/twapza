@@ -1,5 +1,6 @@
 """RQ task entrypoints. Each takes plain string IDs so it is trivially serialisable."""
 
+import dataclasses
 import json
 import logging
 import re
@@ -12,13 +13,15 @@ from sqlmodel import Session, delete, select
 
 from twapza import queue as jobqueue
 from twapza import transcription
-from twapza.captions.ass import build_ass
+from twapza.captions.ass import TextBox, build_ass
 from twapza.captions.style import FONTS_DIR
 from twapza.clipping.highlights import ask_for_candidates, build_highlights
 from twapza.clipping.llm import ClaudeHighlighter, HighlightFinder, chunk_transcript
 from twapza.clipping.signals import detect_scene_cuts, energy_from_wav, loudness_between
 from twapza.clipping.simple import plan_simple_clips
-from twapza.clipping.timeline import Segment, find_quote, pick_teaser, remove_pauses, with_cold_open
+from twapza.clipping.timeline import (
+    Segment, find_quote, is_filler, pick_teaser, remove_pauses, with_cold_open,
+)
 from twapza.config import get_settings
 from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
 from twapza.db.session import get_engine
@@ -30,6 +33,7 @@ from twapza.media import ffmpeg
 from twapza.queue import ProgressReporter, run_tracked
 from twapza.storage import get_storage
 from twapza.transcription import Transcript
+from twapza.transcription.base import Word
 
 log = logging.getLogger(__name__)
 
@@ -68,12 +72,42 @@ def _require_ready(project: Project) -> None:
         raise TaskError("The video has not finished processing yet.")
 
 
-def load_transcript(project: Project) -> Transcript | None:
+def load_corrections(project: Project) -> dict[str, str]:
+    """Caption fixes from the clip editor, keyed by the word's start time (3 decimals)."""
+    storage = get_storage()
+    if not storage.exists(project.corrections_key):
+        return {}
+    try:
+        with storage.open(project.corrections_key) as f:
+            data = json.loads(f.read().decode("utf-8"))
+    except ValueError:
+        return {}
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def word_key(start: float) -> str:
+    return f"{start:.3f}"
+
+
+def load_transcript(project: Project, *, corrected: bool = True) -> Transcript | None:
+    """The cached transcript with the user's caption fixes applied (an empty fix hides a word)."""
     storage = get_storage()
     if not storage.exists(project.transcript_key):
         return None
     with storage.open(project.transcript_key) as f:
-        return Transcript.from_json(f.read().decode("utf-8"))
+        transcript = Transcript.from_json(f.read().decode("utf-8"))
+    fixes = load_corrections(project) if corrected else {}
+    if not fixes:
+        return transcript
+
+    def fixed(word: Word) -> Word:
+        fix = fixes.get(word_key(word.start))
+        if fix is None:
+            return word
+        return dataclasses.replace(word, text=f" {fix.strip()}" if fix.strip() else "")
+
+    return dataclasses.replace(transcript, segments=[
+        dataclasses.replace(seg, words=[fixed(w) for w in seg.words]) for seg in transcript.segments])
 
 
 def _save_transcript(project: Project, transcript: Transcript) -> None:
@@ -105,12 +139,13 @@ def _clip(project_id: str, clip_id: str) -> Clip:
 
 
 def clip_segments(project: Project, clip: Clip, transcript: Transcript | None, *,
-                  cut_pauses: bool = False, cold_open: bool = False) -> list[Segment]:
+                  cut_pauses: bool = False, cold_open: bool = False,
+                  cut_fillers: bool = False) -> list[Segment]:
     """The parts of the source an export plays, in order (see ``clipping/timeline.py``)."""
     words = transcript.words if transcript else []
     segments = [Segment(clip.start, clip.end)]
-    if cut_pauses and words:
-        segments = remove_pauses(words, clip.start, clip.end)
+    if (cut_pauses or cut_fillers) and words:
+        segments = remove_pauses(words, clip.start, clip.end, pauses=cut_pauses, fillers=cut_fillers)
     if cold_open and words:
         segments = with_cold_open(segments, _teaser(project, clip, words))
     return segments
@@ -133,6 +168,27 @@ def _teaser(project: Project, clip: Clip, words: list) -> Segment | None:
     return pick_teaser(words, clip.start, clip.end, loudness)
 
 
+def clip_boxes(clip: Clip) -> list[TextBox]:
+    """The clip editor's texts as positioned boxes in source time (bad entries are skipped)."""
+    try:
+        items = json.loads(clip.overlays or "[]")
+    except ValueError:
+        return []
+    boxes = []
+    for item in items if isinstance(items, list) else []:
+        try:
+            start = clip.start + max(0.0, float(item.get("start") or 0))
+            end = item.get("end")
+            end = clip.end if end is None else min(clip.end, clip.start + float(end))
+            boxes.append(TextBox(text=str(item["text"]), x=float(item["x"]), y=float(item["y"]),
+                                 size=float(item["size"]), font=str(item.get("font", "montserrat")),
+                                 color=str(item.get("color", "#FFFFFF")),
+                                 style=str(item.get("style", "outline")), start=start, end=end))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            log.warning("skipping a bad overlay on clip %s", clip.id)
+    return boxes
+
+
 def render_export(project: Project, clip: Clip, settings: ExportSettings,
                   on_progress: Progress | None = None) -> str:
     """Render a clip with the given settings (if not already rendered). Returns its key."""
@@ -146,14 +202,22 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
     vf = video_filter(settings, project.width or 0, project.height or 0)
     transcript = load_transcript(project)
     segments = clip_segments(project, clip, transcript, cut_pauses=settings.cut_pauses,
-                             cold_open=settings.cold_open)
+                             cold_open=settings.cold_open, cut_fillers=settings.cut_fillers)
+    words = transcript.words if transcript else []
+    if settings.cut_fillers:
+        words = [w for w in words if not is_filler(w)]
     hook = clip.title if settings.hook_text else None
+    boxes = clip_boxes(clip)
+    progress = None
+    if settings.progress_bar:
+        progress = settings.captions.highlight_color if settings.captions else "#FFFFFF"
     with storage.read_path(project.original_key) as src, \
             tempfile.TemporaryDirectory(prefix="twapza-ass-") as tmp:
-        if settings.captions or hook:
+        if settings.captions or hook or boxes or progress:
             width, height = output_size(settings, *ffmpeg.probe(src).display_size)
-            ass_text = build_ass(transcript.words if transcript else [], segments=segments,
-                                 settings=settings.captions, hook=hook, width=width, height=height)
+            ass_text = build_ass(words, segments=segments, settings=settings.captions, hook=hook,
+                                 hook_full=settings.hook_full, boxes=boxes, progress_color=progress,
+                                 width=width, height=height)
             if ass_text:
                 ass_path = Path(tmp) / "captions.ass"
                 ass_path.write_text(ass_text, encoding="utf-8")
@@ -353,7 +417,7 @@ def load_scene_cuts(project: Project, on_progress: Progress | None = None) -> li
 SHORT_LENGTHS = (20.0, 45.0)  # the optional "short & loopable" style
 
 
-def get_highlighter(*, short: bool = False) -> HighlightFinder:
+def get_highlighter(*, short: bool = False, focus: str | None = None) -> HighlightFinder:
     """The Claude-backed highlight finder (replaced by a fake in tests)."""
     settings = get_settings()
     key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
@@ -364,16 +428,17 @@ def get_highlighter(*, short: bool = False) -> HighlightFinder:
                                                      settings.highlight_max_seconds)
     return ClaudeHighlighter(api_key=key, model=settings.claude_model, effort=settings.claude_effort,
                              max_per_chunk=settings.highlights_per_chunk, short=short,
-                             min_len=min_len, max_len=max_len)
+                             min_len=min_len, max_len=max_len, focus=focus)
 
 
-def generate_ai_clips(job_id: str, project_id: str, short: bool = False) -> None:
+def generate_ai_clips(job_id: str, project_id: str, short: bool = False,
+                      focus: str | None = None) -> None:
     def body(progress: ProgressReporter) -> None:
         settings = get_settings()
         storage = get_storage()
         project = _get_project(project_id)
         _require_ready(project)
-        finder = get_highlighter(short=short)  # fail fast on a missing key
+        finder = get_highlighter(short=short, focus=focus)  # fail fast on a missing key
         min_len, max_len = SHORT_LENGTHS if short else (settings.highlight_min_seconds,
                                                          settings.highlight_max_seconds)
         duration = project.duration or 0

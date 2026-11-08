@@ -10,7 +10,7 @@ export const makeProject = (w = 1920, h = 1080, over: Partial<Project> = {}): Pr
 export const makeClip = (over: Partial<Clip> = {}): Clip => ({
   id: "c1", project_id: "p1", source: "simple", index: 1, start: 0, end: 60, duration: 60,
   text: "hello", title: null, hook: null, score: null, reason: null, suggested_start: 0,
-  suggested_end: 60, thumbnail_url: "/t.jpg", ...over,
+  suggested_end: 60, thumbnail_url: "/t.jpg", overlays: [], ...over,
 });
 
 export const makeConfig = (over: Partial<PublicConfig> = {}): PublicConfig => ({

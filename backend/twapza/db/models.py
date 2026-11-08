@@ -99,6 +99,11 @@ class Project(SQLModel, table=True):
         return f"{self.prefix}transcript.json"
 
     @property
+    def corrections_key(self) -> str:
+        """Caption fixes made in the clip editor: {"<word start, 3 decimals>": "new text"}."""
+        return f"{self.prefix}corrections.json"
+
+    @property
     def scenes_key(self) -> str:
         return f"{self.prefix}scenes.json"
 
@@ -152,6 +157,8 @@ class Clip(SQLModel, table=True):
     title_options: str | None = None  # JSON list of suggested Shorts titles
     # The clip's most gripping line, quoted by Claude, for the optional cold open
     teaser: str | None = None
+    # Texts placed in the clip editor (JSON list of api.schemas.TextOverlay)
+    overlays: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
     @property

@@ -35,12 +35,19 @@ class ExportSettings(BaseModel):
     cold_open: bool = False
     # and silences between words shortened (jump cuts).
     cut_pauses: bool = False
+    # Show the hook text for the whole clip instead of the first 3 seconds.
+    hook_full: bool = False
+    # Cut out "um", "uh", … (with the silence around them).
+    cut_fillers: bool = False
+    # A thin bar along the top that fills up as the clip plays.
+    progress_bar: bool = False
 
     def normalized(self) -> "ExportSettings":
         """Drop options that don't affect the output, so equal outputs share a cache key."""
+        out = self.model_copy(update={"hook_full": self.hook_full and self.hook_text})
         if self.aspect == "9:16":
-            return self.model_copy(update={"upscale_1080": False})
-        return self.model_copy(update={"vertical_fit": "blur"})
+            return out.model_copy(update={"upscale_1080": False})
+        return out.model_copy(update={"vertical_fit": "blur"})
 
 
 def video_filter(settings: ExportSettings, width: int, height: int) -> str | None:
@@ -71,6 +78,8 @@ def export_key(clip: Clip, settings: ExportSettings) -> str:
         fingerprint += f"|hook={clip.title or ''}"
     if settings.cold_open:
         fingerprint += f"|teaser={clip.teaser or ''}"
+    if clip.overlays and clip.overlays != "[]":
+        fingerprint += f"|overlays={clip.overlays}"
     digest = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
     return f"{clip.exports_prefix}{digest}.mp4"
 

@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 
 FONTS_DIR = Path(__file__).parent / "fonts"
 
+# How many CSS pixels of em one unit of ASS Fontsize gives (libass sizes fonts by their
+# ascent+descent, not the em). Measured by rendering a capital H with libass and dividing its
+# height by the font's OS/2 cap height (tests/test_overlays.py checks it). The browser previews
+# use these to show text at the size it will have in the download.
+EM_PER_ASS_SIZE: dict[str, float] = {"montserrat": 0.643, "poppins": 0.564, "anton": 0.576, "bebas": 0.771}
+
 # id -> (family name as libass sees it, size multiplier so all fonts look similar in size)
 FONTS: dict[str, tuple[str, float]] = {
     "montserrat": ("Montserrat ExtraBold", 1.0),

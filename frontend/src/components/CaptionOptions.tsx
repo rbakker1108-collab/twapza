@@ -11,12 +11,14 @@ export const DEFAULT_CAPTIONS: CaptionSettings = {
   uppercase: true,
 };
 
-// Mirrors backend/twapza/captions/style.py (FONTS) and ass.py (SIZE_FACTOR, margins).
-export const CAPTION_FONTS: Record<CaptionFont, { label: string; css: string; scale: number }> = {
-  montserrat: { label: "Montserrat", css: "Twapza Montserrat", scale: 1.0 },
-  poppins: { label: "Poppins", css: "Twapza Poppins", scale: 1.0 },
-  anton: { label: "Anton", css: "Twapza Anton", scale: 1.1 },
-  bebas: { label: "Bebas Neue", css: "Twapza Bebas", scale: 1.25 },
+// Mirrors backend/twapza/captions/style.py (FONTS, EM_PER_ASS_SIZE) and ass.py (SIZE_FACTOR, margins).
+// `em`: CSS em per unit of ASS font size (libass sizes fonts by ascent+descent), so the
+// browser previews show text at the size it gets in the download.
+export const CAPTION_FONTS: Record<CaptionFont, { label: string; css: string; scale: number; em: number }> = {
+  montserrat: { label: "Montserrat", css: "Twapza Montserrat", scale: 1.0, em: 0.643 },
+  poppins: { label: "Poppins", css: "Twapza Poppins", scale: 1.0, em: 0.564 },
+  anton: { label: "Anton", css: "Twapza Anton", scale: 1.1, em: 0.576 },
+  bebas: { label: "Bebas Neue", css: "Twapza Bebas", scale: 1.25, em: 0.771 },
 };
 const SIZE_FACTOR = { small: 0.06, medium: 0.075, large: 0.095 };
 const SAMPLE = ["THIS", "IS", "HOW", "IT", "LOOKS", "ON", "YOUR", "CLIP"];
@@ -47,7 +49,7 @@ export function CaptionPreview({ value, vertical }: { value: CaptionSettings; ve
         style={{
           ...placement,
           fontFamily: `"${font.css}", sans-serif`,
-          fontSize: `${short * SIZE_FACTOR[value.size] * font.scale}px`,
+          fontSize: `${short * SIZE_FACTOR[value.size] * font.scale * font.em}px`,
           color: value.text_color,
           WebkitTextStroke: `${outline}px ${value.outline_color}`,
           paintOrder: "stroke fill",

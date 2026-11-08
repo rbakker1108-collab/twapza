@@ -114,6 +114,23 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   ideas) and `ClipPlayer` previews it, so it is set *before* the one download.
   AI highlights take `{"short": true}` for the "short & loopable" style (20-45 s, loop-friendly
   endings; `system_prompt(short=...)`, `tasks.SHORT_LENGTHS`).
+- **Clip editor** (`ClipEditor.tsx`, "Edit" on every clip card): drag texts onto a stage shaped like
+  the download; each `TextOverlay` (`api/schemas.py`: x/y = centre as fractions of the frame,
+  size = font em as a fraction of the frame width, font, colour, style outline|box|plain,
+  start/end seconds from the clip start, end null = whole clip) is saved as JSON on `Clip.overlays`
+  (`PUT /api/clips/{id}/overlays`) and burned in by `build_ass(boxes=...)` (`tasks.clip_boxes` → `TextBox`
+  in source time, mapped through the edit with `timeline.map_span`, `\pos` + per-text style). **Size
+  fidelity**: libass sizes fonts by ascent+descent, so `style.EM_PER_ASS_SIZE` (mirrored as
+  `CAPTION_FONTS[*].em` in the frontend) converts; `test_overlays.py` measures it. Colour emoji can't be
+  rendered (they come out as monochrome glyphs). The "Fix captions" tab edits words
+  (`GET /api/clips/{id}/words`, `PUT /api/projects/{id}/corrections`): fixes are stored per project in
+  `corrections.json` keyed by word start (`tasks.word_key`) and applied by `load_transcript()` (pass
+  `corrected=False` for the raw words); saving refreshes `Clip.text` and deletes the project's cached
+  exports. Other export options: `hook_full` (hook for the whole clip), `cut_fillers` (um/uh/ehm…,
+  `timeline.FILLERS`, `remove_pauses(fillers=True)`), `progress_bar` (animated ASS drawing:
+  `ass.progress_events`; ffmpeg's drawbox can't animate). AI highlights take an optional `focus`
+  ("Look for…", appended to the cached system prompt as a quoted request). The frontend remembers
+  the download settings in localStorage (`twapza.downloadSettings`, `ClipsWorkspace.loadSavedSettings`).
 - **Captions** (`captions/`): `ExportSettings.captions` (`CaptionSettings`: font, colours,
   size, position, words per line, uppercase) → `captions/ass.py::build_ass` (pure: words in the
   clip range, rebased to 0, grouped into pages of N words broken at sentence ends/pauses; one
@@ -167,6 +184,7 @@ frontend/src/
   components/YoutubeImportForm.tsx  link + rights form (home page tab next to UploadForm)
   components/CreditEditor.tsx, DescriptionPanel.tsx  original-creator credit + per-clip description
   components/HookTextEditor.tsx  per-clip hook text + Claude title ideas (shown while "Hook text" is on)
+  components/ClipEditor.tsx  drag-and-drop texts on the video (style, timing) + fix caption words
   components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview
@@ -248,6 +266,9 @@ External services (Whisper, Claude) must be faked behind their protocols in test
    (blur / black bars; crop optional), subtitles on by default + .srt download.
 7. ✅ Clip descriptions (Claude) with an exact credit to the original creator (editable).
 8. ✅ Optional retention boosts: hook text, cold open, cut pauses; title ideas; short & loopable AI style.
+9. ✅ Opus-style editing: clip editor (drag-and-drop texts, fix captions), whole-clip hook, filler-word
+   removal, progress bar, "Look for…" AI prompt, remembered download settings.
 
-Possible next steps: face-tracked vertical crop, editable caption text, hosted
-transcription backend, S3 storage backend, auth for multi-user hosting.
+Possible next steps: face-tracked vertical crop (AI reframe), logo/watermark and image stickers,
+keyword-highlighted captions, background music (own track, ducked under speech), 1:1 / 4:5 formats,
+hosted transcription backend, S3 storage backend, auth for multi-user hosting.

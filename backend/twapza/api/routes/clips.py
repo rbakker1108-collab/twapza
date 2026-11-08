@@ -8,8 +8,8 @@ from sqlmodel import Session, select
 
 from twapza.api.routes.projects import get_project_or_404, serve_object
 from twapza.api.schemas import (
-    AiClipsRequest, ClipDescription, ClipRead, ExportRequest, JobRead, SimpleClipsRequest, TitleRequest,
-    TrimRequest, ZipExportRequest,
+    AiClipsRequest, ClipDescription, ClipRead, ClipWord, CorrectionsRequest, ExportRequest, JobRead,
+    OverlaysRequest, SimpleClipsRequest, TitleRequest, TrimRequest, ZipExportRequest,
 )
 from twapza.captions.srt import build_srt
 from twapza.clipping.descriptions import (
@@ -23,8 +23,9 @@ from twapza.db.session import get_session
 from twapza.exports import export_filename, export_key, zip_filename
 from twapza.queue import completed_job, enqueue_job, get_queue
 from twapza.storage import Storage, get_storage
+from twapza.clipping.timeline import is_filler
 from twapza.workers.tasks import (
-    clip_segments, export_clip, export_zip, generate_ai_clips, generate_simple_clips, load_transcript,
+    clip_segments, export_clip, load_corrections, word_key, export_zip, generate_ai_clips, generate_simple_clips, load_transcript,
     write_thumbnail,
 )
 
@@ -76,7 +77,8 @@ def create_ai_clips(
                             "AI highlights need a Claude API key. Add ANTHROPIC_API_KEY to your "
                             ".env file and restart Twapza.")
     job = enqueue_job(session, queue, project_id=project_id, job_type=JobType.AI_CLIPS,
-                      func=generate_ai_clips, short=bool(body and body.short))
+                      func=generate_ai_clips, short=bool(body and body.short),
+                      focus=(body.focus or "").strip() or None if body else None)
     return JobRead.of(job)
 
 
@@ -151,23 +153,94 @@ def clip_thumbnail(
 
 @router.get("/clips/{clip_id}/subtitles.srt")
 def clip_subtitles(clip_id: str, cut_pauses: bool = False, cold_open: bool = False,
-                   session: Session = Depends(get_session)) -> Response:
+                   cut_fillers: bool = False, session: Session = Depends(get_session)) -> Response:
     """The clip's speech as an .srt subtitle file (times relative to the clip).
 
-    Pass the same ``cut_pauses`` / ``cold_open`` options as the download so the timing matches.
+    Pass the same ``cut_pauses`` / ``cold_open`` / ``cut_fillers`` options as the download so the
+    timing matches.
     """
     clip = _clip_or_404(session, clip_id)
     project = _ready_project(session, clip.project_id)
     transcript = load_transcript(project)
     srt = None
     if transcript:
-        segments = clip_segments(project, clip, transcript, cut_pauses=cut_pauses, cold_open=cold_open)
-        srt = build_srt(transcript.words, segments=segments)
+        segments = clip_segments(project, clip, transcript, cut_pauses=cut_pauses, cold_open=cold_open,
+                                 cut_fillers=cut_fillers)
+        words = [w for w in transcript.words if not (cut_fillers and is_filler(w))]
+        srt = build_srt(words, segments=segments)
     if not srt:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "There is no speech in this clip.")
     name = export_filename(project, clip).removesuffix(".mp4") + ".srt"
     return Response(srt, media_type="application/x-subrip; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.put("/clips/{clip_id}/overlays", response_model=ClipRead)
+def set_clip_overlays(clip_id: str, body: OverlaysRequest,
+                      session: Session = Depends(get_session)) -> ClipRead:
+    """Save the texts placed on the clip in the editor (burned in when downloading)."""
+    clip = _clip_or_404(session, clip_id)
+    clip.overlays = json.dumps([o.model_dump() for o in body.overlays], ensure_ascii=False)
+    session.add(clip)
+    session.commit()
+    session.refresh(clip)
+    return ClipRead.of(clip)
+
+
+@router.get("/clips/{clip_id}/words", response_model=list[ClipWord])
+def clip_words_for_editing(clip_id: str, session: Session = Depends(get_session)) -> list[ClipWord]:
+    """The clip's caption words, for fixing typos in the clip editor."""
+    clip = _clip_or_404(session, clip_id)
+    project = _ready_project(session, clip.project_id)
+    raw = load_transcript(project, corrected=False)
+    if raw is None:
+        return []
+    fixes = load_corrections(project)
+    out = []
+    for w in raw.words:
+        if w.end <= clip.start or w.start >= clip.end:
+            continue
+        original = w.text.strip()
+        text = fixes.get(word_key(w.start), original)
+        out.append(ClipWord(start=w.start, end=w.end, text=text, original=original))
+    return out
+
+
+@router.put("/projects/{project_id}/corrections", response_model=list[ClipRead])
+def save_corrections(
+    project_id: str,
+    body: CorrectionsRequest,
+    session: Session = Depends(get_session),
+    storage: Storage = Depends(get_storage),
+) -> list[ClipRead]:
+    """Fix caption words (for every clip of the project). A fix equal to the original removes it."""
+    project = _ready_project(session, project_id)
+    raw = load_transcript(project, corrected=False)
+    if raw is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The video has no transcript yet.")
+    originals = {word_key(w.start): w.text.strip() for w in raw.words}
+    fixes = load_corrections(project)
+    for fix in body.fixes:
+        key = word_key(fix.start)
+        if key not in originals:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "One of the words wasn't found in the transcript.")
+        text = " ".join(fix.text.split())
+        if text == originals[key]:
+            fixes.pop(key, None)
+        else:
+            fixes[key] = text
+    with storage.write_path(project.corrections_key) as dst:
+        dst.write_text(json.dumps(fixes, ensure_ascii=False), encoding="utf-8")
+
+    # Captions changed: refresh clip texts and drop cached downloads (they have the old captions).
+    transcript = load_transcript(project)
+    clips = session.exec(select(Clip).where(Clip.project_id == project_id)).all()
+    for clip in clips:
+        clip.text = transcript.text_between(clip.start, clip.end)
+        session.add(clip)
+        storage.delete_prefix(clip.exports_prefix)
+    session.commit()
+    return [ClipRead.of(c) for c in clips]
 
 
 @router.put("/clips/{clip_id}/title", response_model=ClipRead)

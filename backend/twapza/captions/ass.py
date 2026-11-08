@@ -11,9 +11,9 @@ highlight colour, which gives the popular karaoke-style "active word" look.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from twapza.captions.style import FONTS, CaptionSettings
+from twapza.captions.style import EM_PER_ASS_SIZE, FONTS, CaptionSettings
 from twapza.clipping.snapping import word_strength
-from twapza.clipping.timeline import Segment, TimedWord, map_words, total_length
+from twapza.clipping.timeline import Segment, TimedWord, map_span, map_words, total_length
 from twapza.transcription.base import Word
 
 PAGE_GAP = 0.6   # a pause longer than this (s) starts a new page
@@ -102,6 +102,26 @@ def caption_events(words: Sequence[TimedWord], settings: CaptionSettings, clip_l
 HOOK_SECONDS = 3.0   # the hook text shows for the first few seconds
 HOOK_SIZE = 0.082    # × short side of the frame
 HOOK_MAX_CHARS = 70
+PROGRESS_HEIGHT = 0.009  # × frame height
+
+
+@dataclass(frozen=True)
+class TextBox:
+    """A text the user placed on the video (clip editor), in source time.
+
+    ``x``/``y``: centre of the text as fractions of the frame; ``size``: font em as a
+    fraction of the frame width (what the browser editor shows); ``style``: "outline",
+    "box" (opaque box behind the text) or "plain" (soft shadow only).
+    """
+    text: str
+    x: float
+    y: float
+    size: float
+    font: str
+    color: str
+    style: str
+    start: float
+    end: float
 
 
 def rebase_words(words: Sequence[Word], clip_start: float | None, clip_end: float | None,
@@ -115,15 +135,42 @@ def rebase_words(words: Sequence[Word], clip_start: float | None, clip_end: floa
     return [w for w in mapped if w.text], total_length(segments)
 
 
-def hook_event(text: str, length: float) -> Event | None:
-    """The hook title, faded in and out over the first ``HOOK_SECONDS``."""
+def hook_event(text: str, length: float, *, full: bool = False) -> Event | None:
+    """The hook title: faded in and out over the first ``HOOK_SECONDS``, or the whole clip (``full``)."""
     text = escape_text(text)
     if not text:
         return None
     if len(text) > HOOK_MAX_CHARS:
         text = text[: HOOK_MAX_CHARS - 1].rsplit(" ", 1)[0] + "…"
+    if full:
+        return Event(start=0.0, end=length, text=f"{{\\fad(120,0)}}{text}") if length > 0.3 else None
     end = min(HOOK_SECONDS, length)
     return Event(start=0.0, end=end, text=f"{{\\fad(120,250)}}{text}") if end > 0.3 else None
+
+
+def box_text(text: str) -> str:
+    """User text for ASS: override syntax neutralised, line breaks kept."""
+    lines = [escape_text(line) for line in text.splitlines()]
+    return "\\N".join(line for line in lines if line)
+
+
+def box_size(box: TextBox, width: int) -> int:
+    """ASS Fontsize that renders the em the browser editor showed."""
+    return max(8, round(box.size * width / EM_PER_ASS_SIZE.get(box.font, 0.643)))
+
+
+def progress_events(length: float, width: int, height: int) -> list[str]:
+    """A thin bar along the top that fills up over the clip (drawn, so it follows any edit)."""
+    if length <= 0.3:
+        return []
+    bar = max(6, round(height * PROGRESS_HEIGHT))
+    shape = f"m 0 0 l {width} 0 l {width} {bar} l 0 {bar}"
+    end, ms = ass_time(length), round(length * 1000)
+    return [
+        f"Dialogue: 3,0:00:00.00,{end},Track,,0,0,0,,{{\\an7\\pos(0,0)\\p1}}{shape}{{\\p0}}",
+        f"Dialogue: 4,0:00:00.00,{end},Progress,,0,0,0,,"
+        f"{{\\an7\\pos(0,0)\\fscx0\\t(0,{ms},\\fscx100)\\p1}}{shape}{{\\p0}}",
+    ]
 
 
 def build_ass(
@@ -136,6 +183,9 @@ def build_ass(
     width: int,
     height: int,
     hook: str | None = None,
+    hook_full: bool = False,
+    boxes: Sequence[TextBox] = (),
+    progress_color: str | None = None,
 ) -> str | None:
     """ASS document for one clip at ``width``×``height``, or None if there is nothing to show.
 
@@ -143,10 +193,14 @@ def build_ass(
     for the first seconds. The clip is ``[clip_start, clip_end]`` or, for an edited
     clip (cut pauses / cold open), the ``segments`` played in order.
     """
+    if segments is None and clip_start is not None and clip_end is not None:
+        segments = [Segment(clip_start, clip_end)]
     timed, length = rebase_words(words, clip_start, clip_end, segments)
     events = caption_events(timed, settings, length) if settings else []
-    hook_ev = hook_event(hook, length) if hook else None
-    if not events and hook_ev is None:
+    hook_ev = hook_event(hook, length, full=hook_full) if hook else None
+    placed = [(i, box, span) for i, box in enumerate(boxes) if box_text(box.text)
+              for span in map_span(box.start, box.end, segments or [])]
+    if not events and hook_ev is None and not placed and not progress_color:
         return None
 
     short = min(width, height)
@@ -179,6 +233,27 @@ def build_ass(
             f"Style: Hook,{family},{size},&H00FFFFFF,&H00FFFFFF,&H33000000,&H33000000,0,0,0,0,"
             f"100,100,0,0,3,{box},0,{alignment},{round(width * 0.09)},{round(width * 0.09)},{margin_v},1")
 
+    for i, box in enumerate(boxes):
+        family = FONTS.get(box.font, FONTS["montserrat"])[0]
+        size = box_size(box, width)
+        color = ass_color(box.color)
+        if box.style == "box":  # opaque dark box behind the text (BorderStyle 3)
+            border = (3, max(4, round(size * 0.22)), 0, "&H33000000")
+        elif box.style == "plain":
+            border = (1, 0, max(2, round(size * 0.05)), "&H00000000")
+        else:  # outline
+            border = (1, max(2, round(size * 0.07)), max(1, round(size * 0.03)), "&H00000000")
+        kind, outline, shadow, outline_color = border
+        styles.append(
+            f"Style: Box{i},{family},{size},{color},{color},{outline_color},&H80000000,0,0,0,0,"
+            f"100,100,0,0,{kind},{outline},{shadow},5,0,0,0,1")
+    if progress_color:
+        color = ass_color(progress_color)
+        styles.append("Style: Track,Arial,20,&H99000000,&H99000000,&H00000000,&H00000000,0,0,0,0,"
+                      "100,100,0,0,1,0,0,7,0,0,0,1")
+        styles.append(f"Style: Progress,Arial,20,{color},{color},&H00000000,&H00000000,0,0,0,0,"
+                      "100,100,0,0,1,0,0,7,0,0,0,1")
+
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -197,4 +272,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     lines = [f"Dialogue: 0,{ass_time(e.start)},{ass_time(e.end)},Caption,,0,0,0,,{e.text}" for e in events]
     if hook_ev:
         lines.append(f"Dialogue: 1,{ass_time(hook_ev.start)},{ass_time(hook_ev.end)},Hook,,0,0,0,,{hook_ev.text}")
+    for i, box, (s, e) in placed:
+        x, y = round(box.x * width), round(box.y * height)
+        lines.append(f"Dialogue: 2,{ass_time(s)},{ass_time(e)},Box{i},,0,0,0,,"
+                     f"{{\\an5\\pos({x},{y})}}{box_text(box.text)}")
+    if progress_color:
+        lines += progress_events(length, width, height)
     return header + "\n".join(lines) + "\n"

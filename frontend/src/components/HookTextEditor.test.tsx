@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { api, type ClipDescription } from "../api/client";
@@ -57,20 +57,21 @@ describe("HookTextEditor", () => {
 describe("Hook text on clip cards", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("appears on every card (with a preview) as soon as the option is ticked", async () => {
+  it("is previewed on the card; editing happens in the clip editor", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listClips").mockImplementation(async (_p, source) =>
-      source === "ai"
-        ? [makeClip({ id: "a1", source: "ai", title: "Hot take", score: 90 })]
-        : [makeClip({ id: "s1", title: null })]);
+      source === "ai" ? [makeClip({ id: "a1", source: "ai", title: "Hot take", score: 90 })] : []);
+    vi.spyOn(api, "getClipWords").mockResolvedValue([]);
     render(<ClipsWorkspace project={makeProject()} config={makeConfig()} />);
     await screen.findByText("Hot take");
-    expect(screen.queryByTestId("hook-editor")).toBeNull();
+    expect(screen.queryByTestId("hook-preview")).toBeNull();
 
     await user.click(screen.getByRole("checkbox", { name: /hook text/i }));
-    const values = screen.getAllByLabelText("Hook text").map((input) => (input as HTMLInputElement).value);
-    expect(values.sort()).toEqual(["", "Hot take"]);                // the AI clip and the simple clip
-    expect(screen.getAllByTestId("hook-preview").map((p) => p.textContent)).toEqual(["Hot take"]);
-    expect(screen.getByText(/No hook text yet/)).toBeInTheDocument(); // the simple clip has none yet
+    expect(screen.getByTestId("hook-preview")).toHaveTextContent("Hot take");
+    expect(screen.queryByTestId("hook-editor")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /edit & download/i }));
+    const dialog = screen.getByRole("dialog", { name: "Edit clip" });
+    expect(within(dialog).getByRole("textbox", { name: "Hook text" })).toHaveValue("Hot take");
   });
 });

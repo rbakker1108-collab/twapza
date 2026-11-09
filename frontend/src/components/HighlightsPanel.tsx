@@ -12,9 +12,11 @@ interface Props {
   aiEnabled: boolean;
   model?: string;
   maxLength?: number;
+  /** Lets the clip editor change the shared download settings. */
+  onSettingsChange?: (settings: ExportSettings) => void;
 }
 
-export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength }: Props) {
+export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength, onSettingsChange }: Props) {
   const [clips, setClips] = useState<Clip[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +136,8 @@ export function HighlightsPanel({ project, settings, aiEnabled, model, maxLength
                 videoDuration={project.duration ?? clip.end}
                 settings={settings}
                 maxLength={maxLength}
-                sourceAspect={project.width && project.height ? project.width / project.height : undefined}
+                project={project}
+                onSettingsChange={onSettingsChange}
                 onChange={(next) => setClips((all) => all.map((c) => (c.id === next.id ? next : c)))}
               />
             ))}

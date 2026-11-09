@@ -1,12 +1,11 @@
 import { useState } from "react";
 
-import { api, type Clip, type ExportSettings, type Job } from "../api/client";
+import { api, type Clip, type ExportSettings, type Job, type Project } from "../api/client";
 import { formatDuration } from "../lib/format";
 import { isFinished, runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
 import { ClipEditor } from "./ClipEditor";
 import { DescriptionPanel } from "./DescriptionPanel";
-import { HookTextEditor } from "./HookTextEditor";
 import { TrimControls } from "./TrimControls";
 
 interface Props {
@@ -17,7 +16,8 @@ interface Props {
   settings: ExportSettings;
   maxLength?: number;
   /** Source width / height (for the editor's "original" format preview). */
-  sourceAspect?: number;
+  project?: Project;
+  onSettingsChange?: (settings: ExportSettings) => void;
   onChange: (clip: Clip) => void;
 }
 
@@ -27,7 +27,7 @@ export function scoreTone(score: number) {
   return "bg-slate-200 text-slate-700";
 }
 
-export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, maxLength, sourceAspect, onChange }: Props) {
+export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, maxLength, project, onSettingsChange, onChange }: Props) {
   const [editing, setEditing] = useState(false);
   const [trimming, setTrimming] = useState(false);
   const [describing, setDescribing] = useState(false);
@@ -121,7 +121,6 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
           />
         )}
 
-        {settings.hook_text && <HookTextEditor clip={clip} onChange={onChange} />}
 
         {error && (
           <p role="alert" className="text-sm text-red-700">
@@ -130,6 +129,14 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
         )}
 
         <div className="mt-auto flex flex-wrap gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            disabled={trimming || !project}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:bg-slate-300"
+          >
+            Edit &amp; download{clip.overlays.length ? ` · ${clip.overlays.length} text${clip.overlays.length > 1 ? "s" : ""}` : ""}
+          </button>
           {!trimming && (
             <button
               type="button"
@@ -143,17 +150,10 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
             type="button"
             onClick={download}
             disabled={exporting || trimming}
+            title="Download right away with the current settings and edits"
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
           >
-            {exporting ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Download"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            disabled={trimming}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-          >
-            Edit{clip.overlays.length ? ` (${clip.overlays.length} text${clip.overlays.length > 1 ? "s" : ""})` : ""}
+            {exporting ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Quick download"}
           </button>
           <button
             type="button"
@@ -181,12 +181,12 @@ export function HighlightCard({ clip, rank, proxyUrl, videoDuration, settings, m
             onTitleChange={onChange}
           />}
       </div>
-      {editing && (
+      {editing && project && (
         <ClipEditor
           clip={clip}
+          project={project}
           settings={settings}
-          proxyUrl={proxyUrl}
-          sourceAspect={sourceAspect ?? 16 / 9}
+          onSettingsChange={onSettingsChange}
           onClose={() => setEditing(false)}
           onSaved={onChange}
         />

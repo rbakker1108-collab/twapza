@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { api, type TextOverlay } from "../api/client";
+import { api, type ClipWord, type ExportSettings, type TextOverlay } from "../api/client";
+import * as jobs from "../lib/jobs";
 import { makeClip, makeConfig, makeProject } from "../test-fixtures";
 import { ClipEditor, isActive } from "./ClipEditor";
 import { ClipsWorkspace } from "./ClipsWorkspace";
@@ -12,14 +13,22 @@ const text = (over: Partial<TextOverlay> = {}): TextOverlay => ({
   style: "box", start: 0, end: null, ...over,
 });
 
-function renderEditor(clip = makeClip(), onSaved = vi.fn(), onClose = vi.fn()) {
-  render(<ClipEditor clip={clip} settings={DEFAULT_EXPORT} proxyUrl="/p.mp4" sourceAspect={16 / 9}
+vi.mock("../lib/jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/jobs")>()),
+  runAndDownload: vi.fn(async (start: () => Promise<unknown>) => start()),
+}));
+
+function renderEditor(clip = makeClip(), onSaved = vi.fn(), onClose = vi.fn(),
+                      settings: ExportSettings = DEFAULT_EXPORT, onSettingsChange = vi.fn(),
+                      words: ClipWord[] = []) {
+  if (!vi.isMockFunction(api.getClipWords)) vi.spyOn(api, "getClipWords").mockResolvedValue(words);
+  render(<ClipEditor clip={clip} project={makeProject()} settings={settings} onSettingsChange={onSettingsChange}
                      onClose={onClose} onSaved={onSaved} />);
   const stage = screen.getByTestId("editor-stage");
   // jsdom has no layout: give the stage a 300×533 box at (100, 50).
   stage.getBoundingClientRect = () => ({ left: 100, top: 50, width: 300, height: 533, right: 400, bottom: 583,
                                          x: 100, y: 50, toJSON: () => ({}) });
-  return { stage, onSaved, onClose };
+  return { stage, onSaved, onClose, onSettingsChange };
 }
 
 describe("ClipEditor: texts", () => {
@@ -33,6 +42,7 @@ describe("ClipEditor: texts", () => {
 
     await user.click(screen.getByRole("button", { name: "+ Add text" }));
     const box = screen.getByLabelText("Text", { selector: "textarea" });
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.clear(box);
     await user.type(box, "He quit his job");
     await user.selectOptions(screen.getByLabelText("Style"), "box");
@@ -78,19 +88,20 @@ describe("ClipEditor: texts", () => {
     expect(save.mock.calls[0][1]).toEqual([text({ start: 2, end: 5.5 })]);
   });
 
-  it("closes on Escape and Cancel without saving", async () => {
+  it("closes on Escape and Close without saving", async () => {
     const user = userEvent.setup();
     const save = vi.spyOn(api, "setOverlays");
     const { onClose } = renderEditor();
     fireEvent.keyDown(window, { key: "Escape" });
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(save).not.toHaveBeenCalled();
   });
 
   it("shows where the captions will be", () => {
     renderEditor();
-    expect(screen.getByTestId("caption-zone")).toHaveStyle({ bottom: "19%" });
+    // Same place as the real captions: 20% up from the bottom of a vertical frame.
+    expect(screen.getByTestId("caption-zone")).toHaveStyle({ bottom: `${(300 * 16) / 9 * 0.2}px` });
   });
 
   it("isActive follows the timing", () => {
@@ -166,5 +177,82 @@ describe("Download options and settings", () => {
     await user.type(screen.getByPlaceholderText(/funny moments/), "money tips");
     await user.click(screen.getByRole("button", { name: "Find highlights" }));
     expect(create).toHaveBeenCalledWith("p1", false, "money tips");
+  });
+});
+
+
+describe("ClipEditor: edit everything, then download", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const WORDS: ClipWord[] = [
+    { start: 0.5, end: 0.9, text: "hello", original: "hello" },
+    { start: 1.0, end: 1.3, text: "big", original: "big" },
+    { start: 1.4, end: 2.0, text: "world.", original: "world." },
+  ];
+
+  it("shows the subtitles live while the clip plays, with the spoken word highlighted", async () => {
+    renderEditor(makeClip(), vi.fn(), vi.fn(), DEFAULT_EXPORT, vi.fn(), WORDS);
+    expect(await screen.findByTestId("caption-zone")).toBeInTheDocument(); // nothing said at 0:00
+    fireEvent.change(screen.getByRole("slider", { name: "Position in clip" }), { target: { value: "1.1" } });
+    const live = await screen.findByTestId("live-caption");
+    expect(live).toHaveTextContent("HELLO BIG WORLD.");
+    expect(within(live).getByText("BIG")).toHaveStyle({ color: "#FFD400" });
+  });
+
+  it("previews caption fixes before they are saved", async () => {
+    const user = userEvent.setup();
+    renderEditor(makeClip(), vi.fn(), vi.fn(), DEFAULT_EXPORT, vi.fn(), WORDS);
+    await user.click(screen.getByRole("tab", { name: "Fix captions" }));
+    const first = within(await screen.findByTestId("caption-words")).getAllByRole("textbox")[0];
+    await user.clear(first);
+    await user.type(first, "hi");
+    fireEvent.change(screen.getByRole("slider", { name: "Position in clip" }), { target: { value: "0.6" } });
+    expect(await screen.findByTestId("live-caption")).toHaveTextContent("HI BIG WORLD.");
+  });
+
+  it("turns on the hook text and picks its duration inside the editor", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    renderEditor(makeClip({ title: "He quit" }), vi.fn(), vi.fn(), DEFAULT_EXPORT, onSettingsChange);
+    const section = screen.getByTestId("hook-section");
+    await user.click(within(section).getByRole("checkbox", { name: /show hook text/i }));
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ hook_text: true }));
+    expect(within(section).getByRole("textbox", { name: "Hook text" })).toHaveValue("He quit");
+    await user.click(within(section).getByRole("radio", { name: "Whole clip" }));
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ hook_text: true, hook_full: true }));
+    expect(screen.getByText("He quit", { selector: "span" })).toBeInTheDocument(); // previewed on the video
+  });
+
+  it("changes the download format and caption style from the Format tab", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    renderEditor(makeClip(), vi.fn(), vi.fn(), DEFAULT_EXPORT, onSettingsChange);
+    await user.click(screen.getByRole("tab", { name: "Format & style" }));
+    const tab = screen.getByTestId("format-tab");
+    await user.click(within(tab).getByRole("radio", { name: /black bars/i }));
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ vertical_fit: "bars" }));
+    await user.click(within(tab).getByRole("checkbox", { name: /progress bar/i }));
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ vertical_fit: "bars", progress_bar: true }));
+  });
+
+  it("saves the edits, then downloads with the chosen settings", async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    vi.spyOn(api, "setOverlays").mockImplementation(async (id, overlays) => {
+      calls.push("save");
+      return makeClip({ id, overlays });
+    });
+    const exportClip = vi.spyOn(api, "exportClip").mockImplementation(async () => {
+      calls.push("export");
+      return { id: "j1", status: "succeeded" } as never;
+    });
+    const { onClose } = renderEditor(makeClip(), vi.fn(), vi.fn(), { ...DEFAULT_EXPORT, cut_pauses: true });
+    await user.click(screen.getByRole("button", { name: "+ Add text" }));
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    await waitFor(() => expect(exportClip).toHaveBeenCalled());
+    expect(calls).toEqual(["save", "export"]);
+    expect(exportClip.mock.calls[0][1]).toMatchObject({ cut_pauses: true });
+    expect(jobs.runAndDownload).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled(); // stays open, e.g. to download another format
   });
 });

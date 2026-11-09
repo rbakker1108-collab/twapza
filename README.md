@@ -64,7 +64,9 @@ The first transcription downloads the Whisper model (`small`, ~500 MB) once.
    and compare "Viewed vs. swiped away" in YouTube Studio).
 4. **AI highlights** tab → optionally fill in **Look for** (e.g. "funny moments") → **Find highlights**
    (tick **Short & loopable** for 20–45 s moments) → review the ranked list, play, **Trim**,
-   **Edit** (drag texts onto the video, fix captions), **Download** (or **Download all (ZIP)**). **Subtitles (.srt)** gives a subtitle file to
+   **Edit & download**: the editor plays the clip with its subtitles; add the hook text, drag your
+   own texts onto the video, fix caption words, change the format and style, then **Download**.
+   (**Quick download** skips the editor; **Download all (ZIP)** gets every clip.) **Subtitles (.srt)** gives a subtitle file to
    upload alongside the Short. **Description** gives a ready-to-paste YouTube description and title ideas;
    With **Hook text** ticked, each clip shows its hook text (edit it, or **Suggest** for Claude's
    title ideas) and previews it on the clip, so you set it before downloading.

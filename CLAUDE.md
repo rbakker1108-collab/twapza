@@ -114,7 +114,13 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   ideas) and `ClipPlayer` previews it, so it is set *before* the one download.
   AI highlights take `{"short": true}` for the "short & loopable" style (20-45 s, loop-friendly
   endings; `system_prompt(short=...)`, `tasks.SHORT_LENGTHS`).
-- **Clip editor** (`ClipEditor.tsx`, "Edit" on every clip card): drag texts onto a stage shaped like
+- **Clip editor** (`ClipEditor.tsx`, "Edit & download", the main button on every clip card): the
+  user edits everything there, then downloads from it (saves texts/fixes first, then
+  `runAndDownload`); "Quick download" on the card skips the editor. Tabs: "Hook & text" (hook on/off,
+  `HookTextEditor`, duration), "Fix captions", "Format & style" (`ExportOptions`; changes go back to the
+  page through `onSettingsChange`, so they are shared and remembered). The stage plays the clip with
+  **live subtitles** (`lib/captions.ts` mirrors `ass.group_words`/`caption_events`; keep them in sync)
+  and previews hook text and progress bar. Drag texts onto a stage shaped like
   the download; each `TextOverlay` (`api/schemas.py`: x/y = centre as fractions of the frame,
   size = font em as a fraction of the frame width, font, colour, style outline|box|plain,
   start/end seconds from the clip start, end null = whole clip) is saved as JSON on `Clip.overlays`
@@ -184,7 +190,8 @@ frontend/src/
   components/YoutubeImportForm.tsx  link + rights form (home page tab next to UploadForm)
   components/CreditEditor.tsx, DescriptionPanel.tsx  original-creator credit + per-clip description
   components/HookTextEditor.tsx  per-clip hook text + Claude title ideas (shown while "Hook text" is on)
-  components/ClipEditor.tsx  drag-and-drop texts on the video (style, timing) + fix caption words
+  components/ClipEditor.tsx  edit-then-download: hook, drag-and-drop texts, live subtitles, fix captions, format
+  lib/captions.ts      caption pages + highlighted word for the live preview (mirrors captions/ass.py)
   components/ClipsWorkspace.tsx  shared download format + AI highlights / Simple clips tabs
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview

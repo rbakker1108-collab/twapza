@@ -72,6 +72,7 @@ export function ClipsWorkspace({ project, config }: Props) {
           aiEnabled={config?.ai_enabled ?? false}
           model={config?.claude_model}
           maxLength={config?.max_clip_seconds}
+          onSettingsChange={setOptions}
         />
       </div>
       <div hidden={tab !== "simple"}>
@@ -80,6 +81,7 @@ export function ClipsWorkspace({ project, config }: Props) {
           settings={settings}
           minSeconds={config?.min_clip_seconds}
           maxSeconds={config?.max_clip_seconds}
+          onSettingsChange={setOptions}
         />
       </div>
     </div>

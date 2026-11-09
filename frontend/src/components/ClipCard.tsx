@@ -1,21 +1,21 @@
 import { useState } from "react";
 
-import { api, type Clip, type ExportSettings, type Job } from "../api/client";
+import { api, type Clip, type ExportSettings, type Job, type Project } from "../api/client";
 import { formatDuration } from "../lib/format";
 import { runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
 import { ClipEditor } from "./ClipEditor";
 import { DescriptionPanel } from "./DescriptionPanel";
-import { HookTextEditor } from "./HookTextEditor";
 
 interface Props {
   clip: Clip;
   proxyUrl: string;
   settings?: ExportSettings;
-  sourceAspect?: number;
+  project?: Project;
+  onSettingsChange?: (settings: ExportSettings) => void;
 }
 
-export function ClipCard({ clip: initial, proxyUrl, settings, sourceAspect }: Props) {
+export function ClipCard({ clip: initial, proxyUrl, settings, project, onSettingsChange }: Props) {
   const [clip, setClip] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
@@ -51,7 +51,6 @@ export function ClipCard({ clip: initial, proxyUrl, settings, sourceAspect }: Pr
         </span>
       </div>
       {clip.text && <p className="line-clamp-3 text-sm text-slate-600">{clip.text}</p>}
-      {settings?.hook_text && <HookTextEditor clip={clip} onChange={setClip} />}
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}
@@ -59,19 +58,20 @@ export function ClipCard({ clip: initial, proxyUrl, settings, sourceAspect }: Pr
       )}
       <button
         type="button"
-        onClick={download}
-        disabled={busy}
-        className="mt-auto rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70"
+        onClick={() => setEditing(true)}
+        disabled={!settings || !project}
+        className="mt-auto rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:bg-slate-300"
       >
-        {busy ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Download"}
+        Edit &amp; download{clip.overlays.length ? ` · ${clip.overlays.length} text${clip.overlays.length > 1 ? "s" : ""}` : ""}
       </button>
       <button
         type="button"
-        onClick={() => setEditing(true)}
-        disabled={!settings}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50"
+        onClick={download}
+        disabled={busy}
+        title="Download right away with the current settings and edits"
+        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70"
       >
-        Edit{clip.overlays.length ? ` (${clip.overlays.length} text${clip.overlays.length > 1 ? "s" : ""})` : ""}
+        {busy ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Quick download"}
       </button>
       <button
         type="button"
@@ -92,12 +92,12 @@ export function ClipCard({ clip: initial, proxyUrl, settings, sourceAspect }: Pr
           Subtitles (.srt)
         </a>
       )}
-      {editing && settings && (
+      {editing && settings && project && (
         <ClipEditor
           clip={clip}
+          project={project}
           settings={settings}
-          proxyUrl={proxyUrl}
-          sourceAspect={sourceAspect ?? 16 / 9}
+          onSettingsChange={onSettingsChange}
           onClose={() => setEditing(false)}
           onSaved={setClip}
         />

@@ -1,22 +1,33 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 import {
-  api, type CaptionFont, type Clip, type ClipWord, type ExportSettings, type OverlayStyle, type TextOverlay,
+  api, type CaptionFont, type Clip, type ClipWord, type ExportSettings, type Job, type OverlayStyle, type Project,
+  type TextOverlay,
 } from "../api/client";
+import { captionAt, groupWords, type TimedWord } from "../lib/captions";
 import { formatDuration } from "../lib/format";
+import { isFinished, runAndDownload } from "../lib/jobs";
 import { CAPTION_FONTS } from "./CaptionOptions";
+import { canUpscale, ExportOptions } from "./ExportOptions";
+import { HookTextEditor } from "./HookTextEditor";
+import { ProgressBar } from "./ProgressBar";
 
 interface Props {
   clip: Clip;
+  project: Project;
+  /** The download settings (shared with the "Download format" section of the page). */
   settings: ExportSettings;
-  proxyUrl: string;
-  /** Source width / height, for previewing the "original" format. */
-  sourceAspect: number;
+  onSettingsChange?: (settings: ExportSettings) => void;
   onClose: () => void;
   onSaved: (clip: Clip) => void;
 }
 
-type Tab = "text" | "captions";
+type Tab = "text" | "captions" | "format";
+
+const FILLERS = new Set(["um", "umm", "uh", "uhh", "uhm", "erm", "er", "ah", "ahh", "hmm", "mm", "mhm",
+                         "eh", "ehm", "euh", "ähm", "äh"]); // timeline.FILLERS
+const isFiller = (text: string) => FILLERS.has(text.toLowerCase().replace(/[^\p{L}\p{N}_]/gu, ""));
+const CAPTION_SIZE = { small: 0.06, medium: 0.075, large: 0.095 }; // ass.SIZE_FACTOR
 
 const STYLES: { id: OverlayStyle; label: string }[] = [
   { id: "outline", label: "Outline" },
@@ -37,7 +48,15 @@ export const isActive = (o: TextOverlay, t: number) => t >= o.start && (o.end ==
  * the whole project. The stage has the download's shape, and text is drawn at the size it
  * will have in the download (CAPTION_FONTS[*].em mirrors libass sizing).
  */
-export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, onSaved }: Props) {
+export function ClipEditor({ clip: initialClip, project, settings: initialSettings, onSettingsChange, onClose, onSaved }: Props) {
+  const [clip, setClip] = useState(initialClip);
+  const [settings, setSettings] = useState(initialSettings);
+  const changeSettings = (next: ExportSettings) => {
+    setSettings(next);
+    onSettingsChange?.(next);
+  };
+  const proxyUrl = api.proxyUrl(project.id);
+  const sourceAspect = project.width && project.height ? project.width / project.height : 16 / 9;
   const vertical = settings.aspect === "9:16";
   const aspect = vertical ? 9 / 16 : sourceAspect || 16 / 9;
   const stageWidth = vertical ? 300 : Math.min(520, 300 * aspect);
@@ -52,13 +71,25 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
   const [words, setWords] = useState<ClipWord[] | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [wordsError, setWordsError] = useState<string | null>(null);
+  const rendering = !!job && !isFinished(job);
   const video = useRef<HTMLVideoElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; dx: number; dy: number } | null>(null);
 
   const current = overlays.find((o) => o.id === selected) ?? null;
   const changedOverlays = JSON.stringify(overlays) !== JSON.stringify(clip.overlays ?? []);
+  // Caption words on the clip's timeline, with unsaved fixes applied (for the live preview).
+  const captionPages = useMemo(() => {
+    if (!words || !settings.captions) return [];
+    const timed: TimedWord[] = words
+      .map((w) => ({ text: (edits[w.start] ?? w.text).trim(), start: w.start - clip.start, end: w.end - clip.start }))
+      .filter((w) => w.text && w.end > 0 && !(settings.cut_fillers && isFiller(w.text)))
+      .map((w) => ({ ...w, start: Math.max(0, w.start), end: Math.min(duration, w.end) }));
+    return groupWords(timed, settings.captions.words_per_line);
+  }, [words, edits, settings.captions, settings.cut_fillers, clip.start, duration]);
   const fixes = useMemo(
     () => (words ?? [])
       .filter((w) => edits[w.start] !== undefined && edits[w.start] !== w.text)
@@ -73,10 +104,10 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Words are needed for the live caption preview and the "Fix captions" tab.
   useEffect(() => {
-    if (tab !== "captions" || words) return;
-    api.getClipWords(clip.id).then(setWords).catch((err) => setError(err.message));
-  }, [tab, words, clip.id]);
+    api.getClipWords(clip.id).then(setWords).catch((err) => setWordsError(err.message));
+  }, [clip.id]);
 
   const update = (id: string, patch: Partial<TextOverlay>) =>
     setOverlays((all) => all.map((o) => (o.id === id ? { ...o, ...patch } : o)));
@@ -143,7 +174,9 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
     drag.current = null;
   };
 
-  async function save() {
+  /** Save texts and caption fixes; returns false if that failed (the error is shown). */
+  async function persist(): Promise<boolean> {
+    if (!dirty) return true;
     setSaving(true);
     setError(null);
     try {
@@ -152,15 +185,42 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
       if (fixes.length) {
         const clips = await api.saveCorrections(clip.project_id, fixes);
         const fresh = clips.find((c) => c.id === clip.id);
-        if (fresh) saved = { ...fresh, overlays: saved.overlays };
+        if (fresh) saved = { ...fresh, overlays: saved.overlays, title: saved.title };
+        // The fixes are saved: they are now the words' current text.
+        setWords((all) => all?.map((w) => (edits[w.start] !== undefined ? { ...w, text: edits[w.start] } : w)) ?? all);
       }
+      setClip(saved);
       onSaved(saved);
-      onClose();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Saving failed.");
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function save() {
+    if (await persist()) onClose();
+  }
+
+  /** Save the edits, then render and download the clip with them. */
+  async function download() {
+    if (!(await persist())) return;
+    setError(null);
+    const final = { ...settings, upscale_1080: canUpscale(project) && settings.upscale_1080 };
+    try {
+      await runAndDownload(() => api.exportClip(clip.id, final), setJob);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rendering failed.");
+    } finally {
+      setJob(null);
+    }
+  }
+
+  function changeTitle(updated: Clip) {
+    setClip((c) => ({ ...c, title: updated.title }));
+    onSaved({ ...clip, title: updated.title });
   }
 
   const fit = vertical && settings.vertical_fit === "crop" ? "object-cover" : "object-contain";
@@ -168,6 +228,7 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
   // Same as captions/ass.py: hook size = short side × HOOK_SIZE × font multiplier, in the captions' font.
   const hookFont = CAPTION_FONTS[settings.captions?.font ?? "montserrat"];
   const hookPx = Math.min(stageWidth, stageHeight) * HOOK_SIZE * hookFont.scale * hookFont.em;
+  const caption = settings.captions ? captionAt(captionPages, time, duration) : null;
 
   return (
     <div
@@ -179,7 +240,7 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
       <div className="w-full max-w-5xl space-y-4 rounded-2xl bg-white p-5 shadow-xl">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold">Edit clip{clip.title ? `: ${clip.title}` : ` ${clip.index}`}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100">
+          <button type="button" onClick={onClose} aria-label="Close editor" className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100">
             ✕
           </button>
         </div>
@@ -235,22 +296,48 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
                   </span>
                 </span>
               )}
-              {settings.captions && (
-                <div
-                  data-testid="caption-zone"
-                  className="pointer-events-none absolute inset-x-[6%] flex items-center justify-center rounded border border-dashed border-white/50 bg-white/10 text-[10px] font-medium uppercase tracking-wide text-white/80"
-                  style={{
-                    height: "9%",
-                    ...(settings.captions.position === "bottom"
-                      ? { bottom: vertical ? "19%" : "7%" }
-                      : settings.captions.position === "top"
-                        ? { top: vertical ? "11%" : "5%" }
-                        : { top: "45.5%" }),
-                  }}
-                >
-                  Captions
-                </div>
-              )}
+              {settings.captions && (() => {
+                const c = settings.captions;
+                const font = CAPTION_FONTS[c.font];
+                const short = Math.min(stageWidth, stageHeight);
+                const place: CSSProperties = c.position === "bottom"
+                  ? { bottom: stageHeight * (vertical ? 0.2 : 0.08) }
+                  : c.position === "top"
+                    ? { top: stageHeight * (vertical ? 0.12 : 0.06) }
+                    : { top: "50%", transform: "translateY(-50%)" };
+                if (!caption) {
+                  return (
+                    <div
+                      data-testid="caption-zone"
+                      className="pointer-events-none absolute inset-x-[6%] flex h-[7%] items-center justify-center rounded border border-dashed border-white/40 text-[10px] font-medium uppercase tracking-wide text-white/60"
+                      style={place}
+                    >
+                      Captions
+                    </div>
+                  );
+                }
+                return (
+                  <div
+                    data-testid="live-caption"
+                    className="pointer-events-none absolute inset-x-[6%] text-center leading-tight"
+                    style={{
+                      ...place,
+                      fontFamily: `"${font.css}", sans-serif`,
+                      fontSize: short * CAPTION_SIZE[c.size] * font.scale * font.em,
+                      color: c.text_color,
+                      WebkitTextStroke: `${Math.max(1, short * 0.006) * 2}px ${c.outline_color}`,
+                      paintOrder: "stroke fill",
+                    }}
+                  >
+                    {caption.page.map((w, i) => (
+                      <span key={`${w.start}-${i}`} style={i === caption.active ? { color: c.highlight_color } : undefined}>
+                        {c.uppercase ? w.text.toUpperCase() : w.text}
+                        {i < caption.page.length - 1 ? " " : ""}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
               {overlays.map((o) => {
                 const shown = isActive(o, time) || o.id === selected;
                 if (!shown || !o.text.trim()) return null;
@@ -313,14 +400,15 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Drag texts to move them. The dashed area shows where captions appear; they're added when you download.
+              Drag texts to move them. Subtitles show as they will in the download; cut pauses, filler removal
+              and the cold open are applied when you download.
             </p>
           </div>
 
           {/* Side panel */}
           <div className="min-w-0 flex-1 space-y-4">
             <div role="tablist" className="inline-flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">
-              {(["text", "captions"] as Tab[]).map((t) => (
+              {(["text", "captions", "format"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -329,13 +417,42 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
                   onClick={() => setTab(t)}
                   className={`rounded-md px-3 py-1 font-medium ${tab === t ? "bg-white shadow-sm" : "text-slate-600"}`}
                 >
-                  {t === "text" ? "Text" : "Fix captions"}
+                  {{ text: "Hook & text", captions: "Fix captions", format: "Format & style" }[t]}
                 </button>
               ))}
             </div>
 
             {tab === "text" ? (
               <div className="space-y-4">
+                <div className="space-y-2 rounded-lg border border-slate-200 p-3 text-sm" data-testid="hook-section">
+                  <label className="flex items-center gap-2 font-medium">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-indigo-600"
+                      checked={settings.hook_text}
+                      onChange={(e) => changeSettings({ ...settings, hook_text: e.target.checked })}
+                    />
+                    Show hook text <span className="font-normal text-slate-500">(bold title at the top)</span>
+                  </label>
+                  {settings.hook_text && (
+                    <>
+                      <HookTextEditor clip={clip} onChange={changeTitle} />
+                      <div className="flex flex-wrap gap-4" role="radiogroup" aria-label="Hook text duration">
+                        <label className="flex items-center gap-1.5">
+                          <input type="radio" className="accent-indigo-600" checked={!settings.hook_full}
+                                 onChange={() => changeSettings({ ...settings, hook_full: false })} />
+                          First 3 seconds
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <input type="radio" className="accent-indigo-600" checked={settings.hook_full}
+                                 onChange={() => changeSettings({ ...settings, hook_full: true })} />
+                          Whole clip
+                        </label>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -464,8 +581,14 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
                   </p>
                 )}
               </div>
+            ) : tab === "format" ? (
+              <div className="text-sm" data-testid="format-tab">
+                <p className="mb-3 text-slate-600">These settings apply to your downloads and are remembered for next time.</p>
+                <ExportOptions project={project} value={settings} onChange={changeSettings} />
+              </div>
             ) : (
               <div className="space-y-3 text-sm">
+                {wordsError && <p className="text-red-700">{wordsError}</p>}
                 <p className="text-slate-600">
                   Fix words the transcription got wrong. Clear a word to hide it. Fixes apply to every clip of this video.
                 </p>
@@ -506,17 +629,31 @@ export function ClipEditor({ clip, settings, proxyUrl, sourceAspect, onClose, on
             {error}
           </p>
         )}
-        <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+        {rendering && job && (
+          <ProgressBar value={job.progress} label={job.status === "queued" ? "Waiting for the worker…" : `Rendering your clip… ${Math.round(job.progress)}%`} />
+        )}
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
+          <span className="mr-auto text-xs text-slate-500">
+            Nothing is rendered until you download. Texts and fixes are saved with the clip.
+          </span>
           <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">
-            Cancel
+            Close
           </button>
           <button
             type="button"
             onClick={save}
-            disabled={!dirty || saving}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:bg-slate-300"
+            disabled={!dirty || saving || rendering}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving && !rendering ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={download}
+            disabled={saving || rendering}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-wait disabled:bg-slate-300"
+          >
+            {rendering ? "Rendering…" : "Download"}
           </button>
         </div>
       </div>

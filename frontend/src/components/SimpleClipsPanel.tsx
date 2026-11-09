@@ -11,11 +11,12 @@ interface Props {
   settings: ExportSettings;
   minSeconds?: number;
   maxSeconds?: number;
+  onSettingsChange?: (settings: ExportSettings) => void;
 }
 
 const DEFAULT_LENGTH = 60;
 
-export function SimpleClipsPanel({ project, settings, minSeconds = 15, maxSeconds = 180 }: Props) {
+export function SimpleClipsPanel({ project, settings, minSeconds = 15, maxSeconds = 180, onSettingsChange }: Props) {
   const [length, setLength] = useState(DEFAULT_LENGTH);
   const [clips, setClips] = useState<Clip[]>([]);
   const [genJob, setGenJob] = useState<Job | null>(null);
@@ -119,7 +120,8 @@ export function SimpleClipsPanel({ project, settings, minSeconds = 15, maxSecond
                 clip={clip}
                 proxyUrl={api.proxyUrl(project.id)}
                 settings={settings}
-                sourceAspect={project.width && project.height ? project.width / project.height : undefined}
+                project={project}
+                onSettingsChange={onSettingsChange}
               />
             ))}
           </div>

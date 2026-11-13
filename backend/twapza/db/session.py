@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 # temporary (24h retention). Replace with Alembic before real deployments.
 SCHEMA_VERSION = 7
 
+# Tables that hold data people expect us to keep (never dropped by the reset below).
+PERMANENT_TABLES = {"waitlistentry"}
+
 MIGRATIONS: dict[int, list[str]] = {
     # version reached -> statements that upgrade from version - 1
     3: [
@@ -116,7 +119,9 @@ def init_db() -> None:
                 log.warning("database schema v%s != v%s: resetting temporary data", version, SCHEMA_VERSION)
                 from twapza.storage import get_storage
 
-                SQLModel.metadata.drop_all(engine)
+                # Projects are temporary; the waitlist (sign-ups from the website) is not.
+                temporary = [t for t in SQLModel.metadata.sorted_tables if t.name not in PERMANENT_TABLES]
+                SQLModel.metadata.drop_all(engine, tables=temporary)
                 get_storage().delete_prefix("projects/")
             SQLModel.metadata.create_all(engine)
             with engine.begin() as conn:

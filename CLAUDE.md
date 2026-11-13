@@ -158,6 +158,15 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `MIGRATIONS` (e.g. `ALTER TABLE ... ADD COLUMN`). Without a migration path the DB and stored
   project files are reset (all data is temporary). Use Alembic once data must survive.
 
+- **Website** (`frontend/src/marketing/`): `MarketingLayout` serves `/`, `/features`, `/solutions`,
+  `/pricing`, `/resources[/:slug]`; the app (`AppLayout`) lives at `/app` and `/projects/:id`. Copy is in
+  `content.ts` (steps, features, audiences, FAQ, guides), prices in `plans.ts` (`price()` formats USD per
+  locale). Don't claim features that don't exist (plan limits/watermark/priority are not enforced yet;
+  they need accounts + billing). The early-access form posts to `POST /api/waitlist`
+  (`WaitlistEntry`, idempotent, lower-cased email). `WaitlistEntry` is **permanent** data:
+  `db/session.PERMANENT_TABLES` are kept when a schema reset drops the temporary tables, and the
+  retention cleanup never touches them. Export/remove with `python -m twapza.waitlist [--remove EMAIL]`.
+
 ## Layout
 
 ```
@@ -184,6 +193,7 @@ backend/twapza/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
+  waitlist.py          early-access list CLI (CSV export, --remove)
   cleanup.py           expiry + orphan sweep + job watchdog loop; `python -m twapza.cleanup [--once]`
 backend/tests/         pytest (unit + ffmpeg integration on synthetic media)
 frontend/src/
@@ -202,6 +212,7 @@ frontend/src/
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview
   components/JobProgress.tsx  progress bar + Cancel; RecentProjects.tsx  home page list + delete
+  marketing/           website: MarketingLayout, LandingPage, Features/Solutions/Pricing/ResourcesPage, content.ts, plans.ts
   components/, pages/  UI (Tailwind); App.tsx = shell (nav, language menu, footer)
   i18n/                translations: index.tsx (provider, t, msg), nl/es/de/fr/ar.ts, server.ts, i18n.test.ts
 ```
@@ -296,6 +307,9 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 10. ✅ Product UI: dark black/orange theme, logo, app shell, hero home page with project grid, step
     indicator, interface in English, Dutch, Spanish, German, French and Arabic (RTL).
 
-Possible next steps: face-tracked vertical crop (AI reframe), logo/watermark and image stickers,
+11. ✅ Website: landing page, Features, Solutions, Pricing, Resources (guides), early-access waitlist;
+    app moved to `/app`.
+
+Possible next steps: accounts + billing (enforce plans, watermark on Free), face-tracked vertical crop (AI reframe), logo/watermark and image stickers,
 keyword-highlighted captions, background music (own track, ducked under speech), 1:1 / 4:5 formats,
 hosted transcription backend, S3 storage backend, auth for multi-user hosting.

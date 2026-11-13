@@ -50,7 +50,8 @@ cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open **<http://localhost:8080>**. Stop with `Ctrl+C` or `docker compose down`.
+Open **<http://localhost:8080>** for the website (features, pricing, guides, early-access list) and
+**<http://localhost:8080/app>** for the app itself. Stop with `Ctrl+C` or `docker compose down`.
 Your projects survive restarts (they live in the `twapza-data` Docker volume until they expire).
 
 The first transcription downloads the Whisper model (`small`, ~500 MB) once.
@@ -76,7 +77,25 @@ The first transcription downloads the Whisper model (`small`, ~500 MB) once.
    The credit at the bottom comes from **Original creator** on the project page: filled in
    automatically for YouTube links, and editable (fill it in yourself for uploaded files).
    **Simple clips** tab → choose a length → **Generate clips**.
-5. Long-running steps can be **canceled**. Your recent projects are listed on the home page.
+5. Long-running steps can be **canceled**. Your recent projects are listed on the app's home page (`/app`).
+
+The interface is available in English, Dutch, Spanish, German, French and Arabic (language menu at the
+top). Captions work for any language Whisper recognises (it detects the spoken language automatically);
+Arabic captions are drawn right-to-left with a bundled Arabic font.
+
+## Website and early-access list
+
+The marketing pages live in `frontend/src/marketing/` (`/`, `/features`, `/solutions`, `/pricing`,
+`/resources`). Prices are a proposal: change them in `frontend/src/marketing/plans.ts`. Plans, limits
+and the watermark are not enforced yet (that needs accounts and billing).
+
+Emails left in the early-access form are stored in the database (they are not deleted by the 24-hour
+cleanup). Export or remove them with:
+
+```bash
+docker compose exec twapza-api python -m twapza.waitlist > waitlist.csv
+docker compose exec twapza-api python -m twapza.waitlist --remove someone@example.com
+```
 
 ## Configuration
 

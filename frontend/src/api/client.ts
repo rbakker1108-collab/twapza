@@ -235,6 +235,7 @@ export const api = {
   getDescription: (clipId: string) => request<ClipDescription>(`/api/clips/${clipId}/description`),
   writeDescription: (clipId: string) =>
     request<ClipDescription>(`/api/clips/${clipId}/description`, { method: "POST" }),
+  joinWaitlist: (email: string, lang: string) => request<{ ok: boolean }>("/api/waitlist", json({ email, lang })),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),

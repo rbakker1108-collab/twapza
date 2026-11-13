@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from twapza.api.routes import clips, imports, jobs, projects, uploads
+from twapza.api.routes import clips, imports, jobs, projects, uploads, waitlist
 from twapza.captions.style import FONTS_DIR
 from twapza.config import ALLOWED_EXTENSIONS, get_settings
 from twapza.db.session import init_db
@@ -23,6 +23,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Twapza API", version="0.1.0", lifespan=lifespan)
     app.include_router(uploads.router)
     app.include_router(imports.router)
+    app.include_router(waitlist.router)
     app.include_router(projects.router)
     app.include_router(jobs.router)
     app.include_router(clips.router)

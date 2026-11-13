@@ -100,7 +100,7 @@ export function ProjectPage() {
     return (
       <div className="mx-auto max-w-xl space-y-4">
         <p className="rounded-lg bg-red-500/10 px-3 py-2 text-red-400">{loadError}</p>
-        <Link to="/" className="text-brand-400 hover:underline">
+        <Link to="/app" className="text-brand-400 hover:underline">
           {t("Upload another video")}
         </Link>
       </div>
@@ -164,7 +164,7 @@ export function ProjectPage() {
         <div className="space-y-3 rounded-2xl border border-line bg-surface p-6">
           <p className="font-medium text-red-400">{project.source_url && !ingest ? t("Import failed") : t("Processing failed")}</p>
           <p className="text-sm text-muted">{failure}</p>
-          <Link to="/" className="text-brand-400 hover:underline">
+          <Link to="/app" className="text-brand-400 hover:underline">
             {project.source_url ? t("Try again") : t("Try another file")}
           </Link>
         </div>

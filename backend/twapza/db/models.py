@@ -181,3 +181,14 @@ class Clip(SQLModel, table=True):
     @property
     def exports_prefix(self) -> str:
         return f"projects/{self.project_id}/exports/{self.id}/"
+
+
+class WaitlistEntry(SQLModel, table=True):
+    """Someone who asked to hear when Twapza launches (marketing site).
+
+    Unlike projects this is NOT temporary data: it is kept until the person asks to be
+    removed, and the schema reset in db/session.py leaves this table alone.
+    """
+    email: str = Field(primary_key=True, max_length=254)  # stored lower-cased
+    lang: str = "en"
+    created_at: datetime = Field(default_factory=utcnow)

@@ -14,6 +14,11 @@ class CreateImport(BaseModel):
     rights_confirmed: bool
 
 
+class WaitlistRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    lang: Literal["en", "nl", "es", "de", "fr", "ar"] = "en"
+
+
 class UpdateCredit(BaseModel):
     """Who made the original video (shown as a credit in clip descriptions). Empty = none."""
     source_title: str | None = Field(default=None, max_length=300)

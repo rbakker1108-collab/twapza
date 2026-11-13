@@ -4,6 +4,7 @@ import {
   api, type CaptionFont, type Clip, type ClipWord, type ExportSettings, type Job, type OverlayStyle, type Project,
   type TextOverlay,
 } from "../api/client";
+import { msg, useT } from "../i18n";
 import { captionAt, groupWords, type TimedWord } from "../lib/captions";
 import { formatDuration } from "../lib/format";
 import { isFinished, runAndDownload } from "../lib/jobs";
@@ -23,6 +24,9 @@ interface Props {
 }
 
 type Tab = "text" | "captions" | "format";
+const TAB_LABELS: Record<Tab, string> = {
+  text: msg("Hook & text"), captions: msg("Fix captions"), format: msg("Format & style"),
+};
 
 const FILLERS = new Set(["um", "umm", "uh", "uhh", "uhm", "erm", "er", "ah", "ahh", "hmm", "mm", "mhm",
                          "eh", "ehm", "euh", "ähm", "äh"]); // timeline.FILLERS
@@ -30,9 +34,9 @@ const isFiller = (text: string) => FILLERS.has(text.toLowerCase().replace(/[^\p{
 const CAPTION_SIZE = { small: 0.06, medium: 0.075, large: 0.095 }; // ass.SIZE_FACTOR
 
 const STYLES: { id: OverlayStyle; label: string }[] = [
-  { id: "outline", label: "Outline" },
-  { id: "box", label: "Box" },
-  { id: "plain", label: "Shadow" },
+  { id: "outline", label: msg("Outline") },
+  { id: "box", label: msg("Box") },
+  { id: "plain", label: msg("Shadow") },
 ];
 const HOOK_SECONDS = 3;
 const HOOK_SIZE = 0.082; // captions/ass.py HOOK_SIZE
@@ -49,6 +53,7 @@ export const isActive = (o: TextOverlay, t: number) => t >= o.start && (o.end ==
  * will have in the download (CAPTION_FONTS[*].em mirrors libass sizing).
  */
 export function ClipEditor({ clip: initialClip, project, settings: initialSettings, onSettingsChange, onClose, onSaved }: Props) {
+  const t = useT();
   const [clip, setClip] = useState(initialClip);
   const [settings, setSettings] = useState(initialSettings);
   const changeSettings = (next: ExportSettings) => {
@@ -114,7 +119,7 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
 
   function addText() {
     const o: TextOverlay = {
-      id: newId(), text: "Your text", x: 0.5, y: vertical ? 0.4 : 0.3, size: vertical ? 0.08 : 0.05,
+      id: newId(), text: t("Your text"), x: 0.5, y: vertical ? 0.4 : 0.3, size: vertical ? 0.08 : 0.05,
       font: settings.captions?.font ?? "montserrat", color: "#FFFFFF", style: "outline",
       start: 0, end: null,
     };
@@ -193,7 +198,7 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
       onSaved(saved);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Saving failed.");
+      setError(err instanceof Error ? err.message : t("Saving failed."));
       return false;
     } finally {
       setSaving(false);
@@ -212,7 +217,7 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
     try {
       await runAndDownload(() => api.exportClip(clip.id, final), setJob);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Rendering failed.");
+      setError(err instanceof Error ? err.message : t("Rendering failed."));
     } finally {
       setJob(null);
     }
@@ -232,15 +237,15 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="Edit clip"
+      aria-label={t("Edit clip")}
     >
-      <div className="w-full max-w-5xl space-y-4 rounded-2xl bg-white p-5 shadow-xl">
+      <div className="w-full max-w-5xl space-y-4 rounded-2xl border border-line bg-surface p-5 shadow-2xl shadow-black/60">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold">Edit clip{clip.title ? `: ${clip.title}` : ` ${clip.index}`}</h2>
-          <button type="button" onClick={onClose} aria-label="Close editor" className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100">
+          <h2 className="text-lg font-semibold">{clip.title ? `${t("Edit clip")}: ${clip.title}` : t("Edit clip {n}", { n: clip.index })}</h2>
+          <button type="button" onClick={onClose} aria-label={t("Close editor")} className="rounded-lg px-2 py-1 text-muted hover:bg-surface-2">
             ✕
           </button>
         </div>
@@ -251,7 +256,8 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
             <div
               ref={stage}
               data-testid="editor-stage"
-              className={`relative select-none overflow-hidden rounded-lg ${settings.vertical_fit === "bars" || !vertical ? "bg-black" : "bg-slate-900"}`}
+              dir="ltr"
+              className={`relative select-none overflow-hidden rounded-lg ${settings.vertical_fit === "bars" || !vertical ? "bg-black" : "bg-black"}`}
               style={{ width: stageWidth, height: stageHeight, touchAction: "none" }}
               onPointerMove={pointerMove}
               onPointerUp={pointerUp}
@@ -268,7 +274,7 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                 preload="metadata"
                 playsInline
                 className={`pointer-events-none absolute inset-0 h-full w-full ${fit}`}
-                onLoadedMetadata={() => video.current && (video.current.currentTime = clip.start)}
+                onLoadedMetadata={() => video.current && (video.current.currentTime = clip.start + time)}
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
                 onTimeUpdate={() => {
@@ -312,7 +318,7 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                       className="pointer-events-none absolute inset-x-[6%] flex h-[7%] items-center justify-center rounded border border-dashed border-white/40 text-[10px] font-medium uppercase tracking-wide text-white/60"
                       style={place}
                     >
-                      Captions
+                      {t("Captions")}
                     </div>
                   );
                 }
@@ -364,11 +370,11 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                   <div
                     key={o.id}
                     role="button"
-                    aria-label={`Text: ${o.text}`}
+                    aria-label={t("Text: {text}", { text: o.text })}
                     data-testid="overlay"
                     onPointerDown={(e) => pointerDown(e, o)}
                     className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-move whitespace-pre text-center leading-[1.15] ${
-                      o.id === selected ? "outline-dashed outline-2 outline-offset-4 outline-indigo-400" : ""
+                      o.id === selected ? "outline-dashed outline-2 outline-offset-4 outline-brand-400" : ""
                     } ${isActive(o, time) ? "" : "opacity-40"}`}
                     style={style}
                   >
@@ -381,72 +387,71 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
               <button
                 type="button"
                 onClick={togglePlay}
-                className="w-16 rounded-md border border-slate-300 px-2 py-1 hover:bg-slate-50"
+                className="w-16 rounded-md border border-line-strong px-2 py-1 hover:bg-surface-2"
               >
-                {playing ? "Pause" : "Play"}
+                {playing ? t("Pause") : t("Play")}
               </button>
               <input
                 type="range"
-                aria-label="Position in clip"
+                aria-label={t("Position in clip")}
                 min={0}
                 max={duration}
                 step={0.1}
                 value={time}
                 onChange={(e) => seek(Number(e.target.value))}
-                className="min-w-0 flex-1 accent-indigo-600"
+                className="min-w-0 flex-1 accent-brand-500"
               />
-              <span className="w-24 text-right tabular-nums text-slate-500">
+              <span className="w-24 text-end tabular-nums text-muted">
                 {formatDuration(time)} / {formatDuration(duration)}
               </span>
             </div>
-            <p className="text-xs text-slate-500">
-              Drag texts to move them. Subtitles show as they will in the download; cut pauses, filler removal
-              and the cold open are applied when you download.
+            <p className="text-xs text-muted">
+              {t("Drag texts to move them. Subtitles show as they will in the download; cut pauses, filler removal and the cold open are applied when you download.")}
             </p>
           </div>
 
           {/* Side panel */}
           <div className="min-w-0 flex-1 space-y-4">
-            <div role="tablist" className="inline-flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">
-              {(["text", "captions", "format"] as Tab[]).map((t) => (
+            <div role="tablist" className="inline-flex gap-1 rounded-lg bg-surface-2 p-1 text-sm">
+              {(["text", "captions", "format"] as Tab[]).map((id) => (
                 <button
-                  key={t}
+                  key={id}
                   type="button"
                   role="tab"
-                  aria-selected={tab === t}
-                  onClick={() => setTab(t)}
-                  className={`rounded-md px-3 py-1 font-medium ${tab === t ? "bg-white shadow-sm" : "text-slate-600"}`}
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                  className={`rounded-md px-3 py-1 font-medium ${tab === id ? "bg-surface-3 text-ink shadow-sm" : "text-muted hover:text-ink"}`}
                 >
-                  {{ text: "Hook & text", captions: "Fix captions", format: "Format & style" }[t]}
+                  {t(TAB_LABELS[id])}
                 </button>
               ))}
             </div>
 
             {tab === "text" ? (
               <div className="space-y-4">
-                <div className="space-y-2 rounded-lg border border-slate-200 p-3 text-sm" data-testid="hook-section">
+                <div className="space-y-2 rounded-lg border border-line p-3 text-sm" data-testid="hook-section">
                   <label className="flex items-center gap-2 font-medium">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-indigo-600"
+                      className="h-4 w-4 accent-brand-500"
                       checked={settings.hook_text}
                       onChange={(e) => changeSettings({ ...settings, hook_text: e.target.checked })}
                     />
-                    Show hook text <span className="font-normal text-slate-500">(bold title at the top)</span>
+                    {t("Show hook text")} <span className="font-normal text-muted">{t("(bold title at the top)")}</span>
                   </label>
                   {settings.hook_text && (
                     <>
                       <HookTextEditor clip={clip} onChange={changeTitle} />
-                      <div className="flex flex-wrap gap-4" role="radiogroup" aria-label="Hook text duration">
+                      <div className="flex flex-wrap gap-4" role="radiogroup" aria-label={t("Hook text duration")}>
                         <label className="flex items-center gap-1.5">
-                          <input type="radio" className="accent-indigo-600" checked={!settings.hook_full}
+                          <input type="radio" className="accent-brand-500" checked={!settings.hook_full}
                                  onChange={() => changeSettings({ ...settings, hook_full: false })} />
-                          First 3 seconds
+                          {t("First 3 seconds")}
                         </label>
                         <label className="flex items-center gap-1.5">
-                          <input type="radio" className="accent-indigo-600" checked={settings.hook_full}
+                          <input type="radio" className="accent-brand-500" checked={settings.hook_full}
                                  onChange={() => changeSettings({ ...settings, hook_full: true })} />
-                          Whole clip
+                          {t("Whole clip")}
                         </label>
                       </div>
                     </>
@@ -457,9 +462,9 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                   <button
                     type="button"
                     onClick={addText}
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+                    className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-black hover:bg-brand-400"
                   >
-                    + Add text
+                    + {t("Add text")}
                   </button>
                   {overlays.map((o) => (
                     <button
@@ -468,33 +473,33 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                       onClick={() => setSelected(o.id)}
                       aria-pressed={o.id === selected}
                       className={`max-w-[12rem] truncate rounded-full border px-3 py-1 text-sm ${
-                        o.id === selected ? "border-indigo-600 bg-indigo-50" : "border-slate-300 hover:border-slate-400"
+                        o.id === selected ? "border-brand-500 bg-brand-500/10" : "border-line-strong hover:border-faint"
                       }`}
                     >
-                      {o.text.trim() || "(empty)"}
+                      {o.text.trim() || t("(empty)")}
                     </button>
                   ))}
                 </div>
 
                 {current ? (
-                  <div className="space-y-3 rounded-lg border border-slate-200 p-3 text-sm" data-testid="overlay-form">
+                  <div className="space-y-3 rounded-lg border border-line p-3 text-sm" data-testid="overlay-form">
                     <label className="block space-y-1">
-                      <span className="text-slate-600">Text</span>
+                      <span className="text-muted">{t("Text")}</span>
                       <textarea
                         value={current.text}
                         rows={2}
                         maxLength={300}
                         onChange={(e) => update(current.id, { text: e.target.value })}
-                        className="w-full rounded-md border border-slate-300 px-2 py-1.5"
+                        className="w-full rounded-md border border-line-strong px-2 py-1.5"
                       />
                     </label>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="space-y-1">
-                        <span className="block text-slate-600">Font</span>
+                        <span className="block text-muted">{t("Font")}</span>
                         <select
                           value={current.font}
                           onChange={(e) => update(current.id, { font: e.target.value as CaptionFont })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1.5"
+                          className="w-full rounded-md border border-line-strong px-2 py-1.5"
                         >
                           {Object.entries(CAPTION_FONTS).map(([id, f]) => (
                             <option key={id} value={id}>
@@ -504,21 +509,21 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                         </select>
                       </label>
                       <label className="space-y-1">
-                        <span className="block text-slate-600">Style</span>
+                        <span className="block text-muted">{t("Style")}</span>
                         <select
                           value={current.style}
                           onChange={(e) => update(current.id, { style: e.target.value as OverlayStyle })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1.5"
+                          className="w-full rounded-md border border-line-strong px-2 py-1.5"
                         >
                           {STYLES.map((s) => (
                             <option key={s.id} value={s.id}>
-                              {s.label}
+                              {t(s.label)}
                             </option>
                           ))}
                         </select>
                       </label>
                       <label className="space-y-1">
-                        <span className="block text-slate-600">Size</span>
+                        <span className="block text-muted">{t("Size")}</span>
                         <input
                           type="range"
                           min={0.03}
@@ -526,16 +531,16 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                           step={0.005}
                           value={current.size}
                           onChange={(e) => update(current.id, { size: Number(e.target.value) })}
-                          className="w-full accent-indigo-600"
+                          className="w-full accent-brand-500"
                         />
                       </label>
                       <label className="space-y-1">
-                        <span className="block text-slate-600">Colour</span>
+                        <span className="block text-muted">{t("Colour")}</span>
                         <input
                           type="color"
                           value={current.color}
                           onChange={(e) => update(current.id, { color: e.target.value.toUpperCase() })}
-                          className="h-8 w-full rounded-md border border-slate-300"
+                          className="h-8 w-full rounded-md border border-line-strong"
                         />
                       </label>
                     </div>
@@ -543,26 +548,26 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          className="h-4 w-4 accent-indigo-600"
+                          className="h-4 w-4 accent-brand-500"
                           checked={current.start === 0 && current.end === null}
                           onChange={(e) =>
                             update(current.id, e.target.checked
                               ? { start: 0, end: null }
                               : { start: Math.min(time, Math.max(0, duration - 1)), end: Math.min(duration, Math.max(time, 0) + 3) })}
                         />
-                        Show for the whole clip
+                        {t("Show for the whole clip")}
                       </label>
                       {!(current.start === 0 && current.end === null) && (
                         <div className="flex flex-wrap items-center gap-2">
                           <TimeField
-                            label="From"
+                            label={t("From")}
                             value={current.start}
                             max={duration}
                             onChange={(v) => update(current.id, { start: v, end: current.end !== null && current.end <= v ? Math.min(duration, v + 1) : current.end })}
                             onNow={() => update(current.id, { start: Math.round(time * 10) / 10 })}
                           />
                           <TimeField
-                            label="To"
+                            label={t("To")}
                             value={current.end ?? duration}
                             max={duration}
                             onChange={(v) => update(current.id, { end: v > current.start ? v : current.start + 0.5 })}
@@ -571,31 +576,31 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                         </div>
                       )}
                     </div>
-                    <button type="button" onClick={() => remove(current.id)} className="text-red-700 hover:underline">
-                      Delete this text
+                    <button type="button" onClick={() => remove(current.id)} className="text-red-400 hover:underline">
+                      {t("Delete this text")}
                     </button>
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500">
-                    {overlays.length ? "Select a text to edit it, or drag it on the video." : "Add a text, then drag it where you want it on the video."}
+                  <p className="text-sm text-muted">
+                    {overlays.length ? t("Select a text to edit it, or drag it on the video.") : t("Add a text, then drag it where you want it on the video.")}
                   </p>
                 )}
               </div>
             ) : tab === "format" ? (
               <div className="text-sm" data-testid="format-tab">
-                <p className="mb-3 text-slate-600">These settings apply to your downloads and are remembered for next time.</p>
+                <p className="mb-3 text-muted">{t("These settings apply to your downloads and are remembered for next time.")}</p>
                 <ExportOptions project={project} value={settings} onChange={changeSettings} />
               </div>
             ) : (
               <div className="space-y-3 text-sm">
-                {wordsError && <p className="text-red-700">{wordsError}</p>}
-                <p className="text-slate-600">
-                  Fix words the transcription got wrong. Clear a word to hide it. Fixes apply to every clip of this video.
+                {wordsError && <p className="text-red-400">{wordsError}</p>}
+                <p className="text-muted">
+                  {t("Fix words the transcription got wrong. Clear a word to hide it. Fixes apply to every clip of this video.")}
                 </p>
                 {!words ? (
-                  <p className="text-slate-500">Loading words…</p>
+                  <p className="text-muted">{t("Loading words…")}</p>
                 ) : words.length === 0 ? (
-                  <p className="text-slate-500">No speech in this clip.</p>
+                  <p className="text-muted">{t("No speech in this clip.")}</p>
                 ) : (
                   <div className="flex max-h-80 flex-wrap gap-1.5 overflow-y-auto" data-testid="caption-words">
                     {words.map((w) => {
@@ -604,16 +609,16 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                       return (
                         <input
                           key={w.start}
-                          aria-label={`Word at ${formatDuration(w.start - clip.start)}`}
-                          title={changed ? `Transcribed as “${w.original}”` : undefined}
+                          aria-label={t("Word at {time}", { time: formatDuration(w.start - clip.start) })}
+                          title={changed ? t("Transcribed as “{word}”", { word: w.original }) : undefined}
                           value={value}
                           size={Math.max(2, value.length + 1)}
                           maxLength={60}
                           onFocus={() => seek(clamp(w.start - clip.start, 0, duration))}
                           onChange={(e) => setEdits((all) => ({ ...all, [w.start]: e.target.value }))}
                           className={`rounded border px-1 py-0.5 ${
-                            changed ? "border-amber-400 bg-amber-50" : "border-slate-200"
-                          } ${value === "" ? "bg-slate-100 line-through" : ""}`}
+                            changed ? "border-amber-400 bg-amber-500/10" : "border-line"
+                          } ${value === "" ? "bg-surface-2 line-through" : ""}`}
                         />
                       );
                     })}
@@ -625,35 +630,35 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
         </div>
 
         {error && (
-          <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
             {error}
           </p>
         )}
         {rendering && job && (
-          <ProgressBar value={job.progress} label={job.status === "queued" ? "Waiting for the worker…" : `Rendering your clip… ${Math.round(job.progress)}%`} />
+          <ProgressBar value={job.progress} label={job.status === "queued" ? t("Waiting for a worker…") : t("Rendering your clip…")} />
         )}
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-4">
-          <span className="mr-auto text-xs text-slate-500">
-            Nothing is rendered until you download. Texts and fixes are saved with the clip.
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+          <span className="me-auto text-xs text-muted">
+            {t("Nothing is rendered until you download. Texts and fixes are saved with the clip.")}
           </span>
-          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">
-            Close
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-muted hover:bg-surface-2">
+            {t("Close")}
           </button>
           <button
             type="button"
             onClick={save}
             disabled={!dirty || saving || rendering}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-line-strong px-4 py-2 text-sm font-medium hover:bg-surface-2 disabled:opacity-50"
           >
-            {saving && !rendering ? "Saving…" : "Save"}
+            {saving && !rendering ? t("Saving…") : t("Save")}
           </button>
           <button
             type="button"
             onClick={download}
             disabled={saving || rendering}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-wait disabled:bg-slate-300"
+            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-black hover:bg-brand-400 disabled:cursor-wait disabled:bg-surface-3 disabled:text-faint"
           >
-            {rendering ? "Rendering…" : "Download"}
+            {rendering ? t("Rendering…") : t("Download")}
           </button>
         </div>
       </div>
@@ -664,10 +669,11 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
 function TimeField({ label, value, max, onChange, onNow }: {
   label: string; value: number; max: number; onChange: (v: number) => void; onNow: () => void;
 }) {
+  const t = useT();
   return (
     <span className="flex items-center gap-1">
       <label className="flex items-center gap-1">
-        <span className="text-slate-600">{label}</span>
+        <span className="text-muted">{label}</span>
         <input
           type="number"
           min={0}
@@ -675,12 +681,12 @@ function TimeField({ label, value, max, onChange, onNow }: {
           step={0.1}
           value={Math.round(value * 10) / 10}
           onChange={(e) => onChange(clamp(Number(e.target.value), 0, max))}
-          className="w-20 rounded-md border border-slate-300 px-2 py-1"
+          className="w-20 rounded-md border border-line-strong px-2 py-1"
         />
-        <span className="text-slate-500">s</span>
+        <span className="text-muted">s</span>
       </label>
-      <button type="button" onClick={onNow} className="rounded px-1.5 py-1 text-indigo-700 hover:bg-indigo-50">
-        Now
+      <button type="button" onClick={onNow} className="rounded px-1.5 py-1 text-brand-400 hover:bg-brand-500/10">
+        {t("Now")}
       </button>
     </span>
   );

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 
 import { api, type Credit, type Project } from "../api/client";
+import { msg, useT } from "../i18n";
 
 interface Props {
   project: Project;
@@ -8,10 +9,10 @@ interface Props {
 }
 
 const FIELDS: { key: keyof Credit; label: string; placeholder: string }[] = [
-  { key: "source_channel", label: "Creator", placeholder: "Joe Fazer" },
-  { key: "source_title", label: "Video title", placeholder: "I Survived Alone In The Amazon…" },
-  { key: "source_url", label: "Video link", placeholder: "https://www.youtube.com/watch?v=…" },
-  { key: "source_channel_url", label: "Channel link", placeholder: "https://www.youtube.com/@…" },
+  { key: "source_channel", label: msg("Creator"), placeholder: "Joe Fazer" },
+  { key: "source_title", label: msg("Video title"), placeholder: "I Survived Alone In The Amazon…" },
+  { key: "source_url", label: msg("Video link"), placeholder: "https://www.youtube.com/watch?v=…" },
+  { key: "source_channel_url", label: msg("Channel link"), placeholder: "https://www.youtube.com/@…" },
 ];
 
 const pick = (p: Project): Credit => ({
@@ -23,6 +24,7 @@ const pick = (p: Project): Credit => ({
 
 /** Who made the original video; shown as a credit in every clip description. */
 export function CreditEditor({ project, onSaved }: Props) {
+  const t = useT();
   const [values, setValues] = useState<Credit>(() => pick(project));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,46 +42,46 @@ export function CreditEditor({ project, onSaved }: Props) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Saving failed.");
+      setError(err instanceof Error ? err.message : t("Saving failed."));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-xl bg-white p-5 shadow-sm">
+    <form onSubmit={submit} className="space-y-3 rounded-2xl border border-line bg-surface p-5">
       <div>
-        <h2 className="font-medium">Original creator</h2>
-        <p className="text-sm text-slate-500">
-          Credited at the bottom of every clip description.
-          {project.source_url ? " Filled in from YouTube; edit if needed." : ""}
+        <h2 className="font-medium">{t("Original creator")}</h2>
+        <p className="text-sm text-muted">
+          {t("Credited at the bottom of every clip description.")}
+          {project.source_url ? ` ${t("Filled in from YouTube; edit if needed.")}` : ""}
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {FIELDS.map(({ key, label, placeholder }) => (
           <label key={key} className="space-y-1 text-sm">
-            <span className="block text-slate-600">{label}</span>
+            <span className="block text-muted">{t(label)}</span>
             <input
               type="text"
               value={values[key] ?? ""}
               placeholder={placeholder}
               onChange={(e) => setValues({ ...values, [key]: e.target.value })}
-              className="w-full rounded-md border border-slate-300 px-2.5 py-1.5"
+              className="w-full rounded-md border border-line-strong bg-surface-2 px-2.5 py-1.5"
             />
           </label>
         ))}
       </div>
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-red-400">
           {error}
         </p>
       )}
       <button
         type="submit"
         disabled={saving || !dirty}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+        className="rounded-lg border border-line-strong px-3 py-1.5 text-sm font-medium hover:bg-surface-2 disabled:opacity-50"
       >
-        {saved ? "Saved ✓" : saving ? "Saving…" : "Save credit"}
+        {saved ? t("Saved ✓") : saving ? t("Saving…") : t("Save credit")}
       </button>
     </form>
   );

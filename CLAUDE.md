@@ -196,7 +196,8 @@ frontend/src/
   components/HighlightsPanel.tsx, HighlightCard.tsx, TrimControls.tsx  ranked AI list + trim
   components/CaptionOptions.tsx  caption style controls + live 9:16 preview
   components/JobProgress.tsx  progress bar + Cancel; RecentProjects.tsx  home page list + delete
-  components/, pages/  UI (Tailwind)
+  components/, pages/  UI (Tailwind); App.tsx = shell (nav, language menu, footer)
+  i18n/                translations: index.tsx (provider, t, msg), nl/es/de/fr/ar.ts, server.ts, i18n.test.ts
 ```
 
 To add a hosted transcription API: implement `Transcriber` in `transcription/<name>.py`
@@ -216,6 +217,17 @@ and register it in `transcription/get_transcriber()` (selected by `TWAPZA_TRANSC
 - Schema changes go through `SCHEMA_VERSION` + `MIGRATIONS` in `db/session.py` (see above).
 - Frontend: function components + hooks, Tailwind utility classes, no global state
   library. Keep API types in `api/client.ts` in sync with `api/schemas.py`.
+- **Theme** (dark, black + orange): use the named colours from `src/index.css` `@theme`
+  (`bg-canvas`, `bg-surface`/`-2`/`-3`, `text-ink`/`ink-soft`/`muted`/`faint`, `border-line`/`line-strong`,
+  `brand-50…950` orange; primary buttons are `bg-brand-500 text-black`), not raw `slate`/`indigo`.
+  Fonts are self-hosted (`@fontsource-variable/inter` + `noto-sans-arabic`; no Google Fonts: GDPR).
+  Logo: `components/Logo.tsx` (= `public/favicon.svg`).
+- **Translations** (`src/i18n/`): every visible text is English wrapped in `t("…")` (from `useT()`/`useI18n()`),
+  or `msg("…")` for constants translated where shown; placeholders `{name}`. Add each new text to
+  `nl/es/de/fr/ar.ts`: `i18n.test.ts` scans the source and fails on missing/unused keys or placeholder
+  mismatches. Arabic is right-to-left (`<html dir="rtl">`): use logical utilities (`ms-/me-/ps-/pe-/start-/end-/
+  text-start`), and keep video stages `dir="ltr"`. Backend progress messages are translated on the client
+  (`i18n/server.ts`); API error messages are still English.
 - Naming: the app is **Twapza**; lowercase `twapza` for packages, services, env prefixes.
 
 ## Running
@@ -275,6 +287,8 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 8. ✅ Optional retention boosts: hook text, cold open, cut pauses; title ideas; short & loopable AI style.
 9. ✅ Opus-style editing: clip editor (drag-and-drop texts, fix captions), whole-clip hook, filler-word
    removal, progress bar, "Look for…" AI prompt, remembered download settings.
+10. ✅ Product UI: dark black/orange theme, logo, app shell, hero home page with project grid, step
+    indicator, interface in English, Dutch, Spanish, German, French and Arabic (RTL).
 
 Possible next steps: face-tracked vertical crop (AI reframe), logo/watermark and image stickers,
 keyword-highlighted captions, background music (own track, ducked under speech), 1:1 / 4:5 formats,

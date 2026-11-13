@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 
+import { useT } from "../i18n";
+
 /** How the preview is framed: as uploaded, or approximating a 9:16 export. */
 export type PreviewFrame = "original" | "crop" | "blur" | "bars";
 
@@ -21,6 +23,7 @@ interface Props {
  * black = fit with black bars.
  */
 export function ClipPlayer({ src, start, end, poster, frame = "original", hookText }: Props) {
+  const t = useT();
   const ref = useRef<HTMLVideoElement>(null);
   const [active, setActive] = useState(false);
   const vertical = frame !== "original";
@@ -35,7 +38,8 @@ export function ClipPlayer({ src, start, end, poster, frame = "original", hookTe
   return (
     <div
       data-testid="clip-frame"
-      className={`relative w-full overflow-hidden rounded-lg ${frame === "bars" ? "bg-black" : "bg-slate-900"} ${vertical ? "aspect-[9/16]" : "aspect-video"}`}
+      dir="ltr"
+      className={`relative w-full overflow-hidden rounded-lg ${frame === "bars" ? "bg-black" : "bg-black"} ${vertical ? "aspect-[9/16]" : "aspect-video"}`}
     >
       {frame === "blur" && poster && (
         <img src={poster} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-80 blur-xl" />
@@ -63,7 +67,7 @@ export function ClipPlayer({ src, start, end, poster, frame = "original", hookTe
       ) : (
         <button
           type="button"
-          aria-label="Play clip"
+          aria-label={t("Play clip")}
           onClick={() => setActive(true)}
           className="group absolute inset-0 block h-full w-full"
         >

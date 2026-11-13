@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 
+import { useT } from "../i18n";
+
 interface Props {
   onImport: (url: string) => Promise<void>;
 }
@@ -9,6 +11,7 @@ export const looksLikeYoutubeLink = (url: string) =>
   /^(https?:\/\/)?((www|m|music)\.)?(youtube\.com|youtu\.be)\/\S+/i.test(url.trim());
 
 export function YoutubeImportForm({ onImport }: Props) {
+  const t = useT();
   const [url, setUrl] = useState("");
   const [rights, setRights] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +23,7 @@ export function YoutubeImportForm({ onImport }: Props) {
     e.preventDefault();
     if (!canSubmit) return;
     if (!looksLikeYoutubeLink(url)) {
-      setError("Paste a YouTube video link, like https://www.youtube.com/watch?v=… or https://youtu.be/….");
+      setError(t("Paste a YouTube video link, like https://www.youtube.com/watch?v=… or https://youtu.be/…."));
       return;
     }
     setError(null);
@@ -28,7 +31,7 @@ export function YoutubeImportForm({ onImport }: Props) {
     try {
       await onImport(url.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Import failed.");
+      setError(err instanceof Error ? err.message : t("Import failed."));
       setBusy(false);
     }
   }
@@ -37,7 +40,7 @@ export function YoutubeImportForm({ onImport }: Props) {
     <form onSubmit={submit} className="space-y-5">
       <div className="space-y-1.5">
         <label htmlFor="youtube-url" className="block text-sm font-medium">
-          YouTube link
+          {t("YouTube link")}
         </label>
         <input
           id="youtube-url"
@@ -49,26 +52,26 @@ export function YoutubeImportForm({ onImport }: Props) {
           value={url}
           disabled={busy}
           onChange={(e) => setUrl(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          className="w-full rounded-lg border border-line-strong bg-surface-2 px-3 py-2.5 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
         />
-        <p id="youtube-url-hint" className="text-sm text-slate-500">
-          A video you posted (public or unlisted). Twapza downloads it in up to 1080p.
+        <p id="youtube-url-hint" className="text-sm text-muted">
+          {t("A video you posted (public or unlisted). Twapza downloads it in up to 1080p.")}
         </p>
       </div>
 
       <label className="flex items-start gap-3 text-sm">
         <input
           type="checkbox"
-          className="mt-0.5 h-4 w-4 accent-indigo-600"
+          className="mt-0.5 h-4 w-4 accent-brand-500"
           checked={rights}
           disabled={busy}
           onChange={(e) => setRights(e.target.checked)}
         />
-        <span>I confirm that I own this video or have permission to use and edit it.</span>
+        <span>{t("I confirm that I own this video or have permission to use and edit it.")}</span>
       </label>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error}
         </p>
       )}
@@ -76,9 +79,9 @@ export function YoutubeImportForm({ onImport }: Props) {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="w-full rounded-lg bg-brand-500 px-4 py-2.5 font-semibold text-black transition hover:bg-brand-400 disabled:cursor-not-allowed disabled:bg-surface-3 disabled:text-faint"
       >
-        {busy ? "Starting import…" : "Import from YouTube"}
+        {busy ? t("Starting import…") : t("Import from YouTube")}
       </button>
     </form>
   );

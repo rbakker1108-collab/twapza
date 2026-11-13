@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { api, type Clip, type ExportSettings, type Job, type Project } from "../api/client";
+import { useT } from "../i18n";
 import { formatDuration } from "../lib/format";
 import { runAndDownload } from "../lib/jobs";
 import { ClipPlayer } from "./ClipPlayer";
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function ClipCard({ clip: initial, proxyUrl, settings, project, onSettingsChange }: Props) {
+  const t = useT();
   const [clip, setClip] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
@@ -28,14 +30,14 @@ export function ClipCard({ clip: initial, proxyUrl, settings, project, onSetting
     try {
       await runAndDownload(() => api.exportClip(clip.id, settings), setJob);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed.");
+      setError(err instanceof Error ? err.message : t("Export failed."));
     } finally {
       setJob(null);
     }
   }
 
   return (
-    <article className="flex flex-col gap-3 rounded-xl bg-white p-3 shadow-sm">
+    <article className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-3 transition hover:border-line-strong">
       <ClipPlayer
         src={proxyUrl}
         start={clip.start}
@@ -45,14 +47,14 @@ export function ClipCard({ clip: initial, proxyUrl, settings, project, onSetting
         hookText={settings?.hook_text ? clip.title : null}
       />
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-medium">Clip {clip.index}</span>
-        <span className="text-slate-500 tabular-nums">
+        <span className="font-medium">{t("Clip {n}", { n: clip.index })}</span>
+        <span className="text-muted tabular-nums">
           {formatDuration(clip.start)}–{formatDuration(clip.end)} · {Math.round(clip.duration)}s
         </span>
       </div>
-      {clip.text && <p className="line-clamp-3 text-sm text-slate-600">{clip.text}</p>}
+      {clip.text && <p className="line-clamp-3 text-sm text-muted">{clip.text}</p>}
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-red-400">
           {error}
         </p>
       )}
@@ -60,36 +62,36 @@ export function ClipCard({ clip: initial, proxyUrl, settings, project, onSetting
         type="button"
         onClick={() => setEditing(true)}
         disabled={!settings || !project}
-        className="mt-auto rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:bg-slate-300"
+        className="mt-auto rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-black transition hover:bg-brand-400 disabled:bg-surface-3 disabled:text-faint"
       >
-        Edit &amp; download{clip.overlays.length ? ` · ${clip.overlays.length} text${clip.overlays.length > 1 ? "s" : ""}` : ""}
+        {t("Edit & download")}{clip.overlays.length === 1 ? ` · ${t("1 text")}` : clip.overlays.length > 1 ? ` · ${t("{n} texts", { n: clip.overlays.length })}` : ""}
       </button>
       <button
         type="button"
         onClick={download}
         disabled={busy}
-        title="Download right away with the current settings and edits"
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70"
+        title={t("Download right away with the current settings and edits")}
+        className="rounded-lg border border-line-strong px-3 py-1.5 text-sm font-medium transition hover:bg-surface-2 disabled:cursor-wait disabled:opacity-70"
       >
-        {busy ? `Rendering… ${Math.round(job?.progress ?? 0)}%` : "Quick download"}
+        {busy ? t("Rendering… {n}%", { n: Math.round(job?.progress ?? 0) }) : t("Quick download")}
       </button>
       <button
         type="button"
         onClick={() => setDescribing(!describing)}
         aria-expanded={describing}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50"
+        className="rounded-lg border border-line-strong px-3 py-1.5 text-sm font-medium transition hover:bg-surface-2"
       >
-        Description
+        {t("Description")}
       </button>
       {describing && <DescriptionPanel clipId={clip.id} currentTitle={clip.title} onTitleChange={setClip} />}
       {clip.text && (
         <a
           href={api.subtitlesUrl(clip.id, settings)}
           download
-          className="text-center text-sm text-indigo-700 hover:underline"
-          title="Subtitle file to upload to YouTube or TikTok"
+          className="text-center text-sm text-brand-400 hover:underline"
+          title={t("Subtitle file to upload to YouTube or TikTok")}
         >
-          Subtitles (.srt)
+          {t("Subtitles (.srt)")}
         </a>
       )}
       {editing && settings && project && (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api, type Clip, type ClipDescription } from "../api/client";
+import { useT } from "../i18n";
 
 interface Props {
   clipId: string;
@@ -14,6 +15,7 @@ interface Props {
  * credit to the original creator. Writes one with Claude the first time it opens.
  */
 export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }: Props) {
+  const t = useT();
   const [desc, setDesc] = useState<ClipDescription | null>(null);
   const [text, setText] = useState("");
   const [writing, setWriting] = useState(false);
@@ -34,7 +36,7 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
       show(await api.writeDescription(clipId));
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Writing the description failed.",
+        err instanceof Error ? err.message : t("Writing the description failed."),
       );
     } finally {
       setWriting(false);
@@ -63,7 +65,7 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
       setCopied(what);
       setTimeout(() => setCopied(null), 2000);
     } catch {
-      setError("Couldn't copy automatically. Select the text and copy it.");
+      setError(t("Couldn't copy automatically. Select the text and copy it."));
     }
   }
 
@@ -74,51 +76,51 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
       setHookTitle(clip.title);
       onTitleChange?.(clip);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Saving the title failed.");
+      setError(err instanceof Error ? err.message : t("Saving the title failed."));
     }
   }
 
   return (
     <div
-      className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3"
+      className="space-y-2 rounded-lg border border-line bg-surface-2 p-3"
       data-testid="description-panel"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium">YouTube description</span>
-        {writing && <span className="text-sm text-slate-500">Writing…</span>}
+        <span className="text-sm font-medium">{t("YouTube description")}</span>
+        {writing && <span className="text-sm text-muted">{t("Writing…")}</span>}
       </div>
       <textarea
-        aria-label="YouTube description"
+        aria-label={t("YouTube description")}
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={Math.min(14, Math.max(6, text.split("\n").length + 1))}
         disabled={!desc}
-        className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm leading-relaxed"
+        className="w-full rounded-md border border-line-strong bg-surface px-2.5 py-2 text-sm leading-relaxed"
       />
       {desc && desc.titles.length > 0 && (
         <div className="space-y-1.5">
-          <span className="text-sm font-medium">Title ideas</span>
+          <span className="text-sm font-medium">{t("Title ideas")}</span>
           <ul className="space-y-1.5">
             {desc.titles.map((title) => (
-              <li key={title} className="flex flex-wrap items-center gap-2 rounded-md bg-white px-2.5 py-1.5 text-sm">
+              <li key={title} className="flex flex-wrap items-center gap-2 rounded-md bg-surface px-2.5 py-1.5 text-sm">
                 <span className="min-w-0 flex-1 font-medium">{title}</span>
                 <button
                   type="button"
                   onClick={() => copy(title, title)}
-                  className="text-indigo-700 hover:underline"
+                  className="text-brand-400 hover:underline"
                 >
-                  {copied === title ? "Copied ✓" : "Copy"}
+                  {copied === title ? t("Copied ✓") : t("Copy")}
                 </button>
                 {hookTitle === title ? (
-                  <span className="text-emerald-700">✓ Hook text</span>
+                  <span className="text-emerald-400">✓ {t("Hook text")}</span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => useAsHook(title)}
-                    className="text-indigo-700 hover:underline"
-                    title="Shown in bold on the first seconds of the video when “Hook text” is on"
+                    className="text-brand-400 hover:underline"
+                    title={t("Shown in bold at the top of the video when “Hook text” is on")}
                   >
-                    Use as hook text
+                    {t("Use as hook text")}
                   </button>
                 )}
               </li>
@@ -127,19 +129,17 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
         </div>
       )}
       {desc && !desc.credit && (
-        <p className="text-sm text-amber-700">
-          No credit yet: fill in “Original creator” above so the description
-          credits them.
+        <p className="text-sm text-amber-400">
+          {t("No credit yet: fill in “Original creator” above so the description credits them.")}
         </p>
       )}
       {desc && !desc.ai && !writing && !error && (
-        <p className="text-sm text-slate-500">
-          Simple description. Add a Claude API key to get AI-written
-          descriptions.
+        <p className="text-sm text-muted">
+          {t("Simple description. Add a Claude API key to get AI-written descriptions.")}
         </p>
       )}
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-red-400">
           {error}
         </p>
       )}
@@ -148,18 +148,18 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
           type="button"
           onClick={() => copy(text, "description")}
           disabled={!desc}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:bg-slate-300"
+          className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-black hover:bg-brand-400 disabled:bg-surface-3 disabled:text-faint"
         >
-          {copied === "description" ? "Copied ✓" : "Copy description"}
+          {copied === "description" ? t("Copied ✓") : t("Copy description")}
         </button>
         {(desc?.ai || error) && (
           <button
             type="button"
             onClick={write}
             disabled={writing}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-white disabled:opacity-60"
+            className="rounded-lg border border-line-strong px-3 py-1.5 text-sm font-medium hover:bg-surface-2 disabled:opacity-60"
           >
-            Write another
+            {t("Write another")}
           </button>
         )}
       </div>

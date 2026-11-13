@@ -123,7 +123,8 @@ def test_bundled_fonts_exist_with_licences():
     for name in ("Montserrat-ExtraBold.ttf", "Poppins-ExtraBold.ttf", "Anton-Regular.ttf",
                  "BebasNeue-Regular.ttf"):
         assert name in files
-    assert len([f for f in files if f.startswith("OFL-")]) == 4
+    assert "NotoSansArabic-ExtraBold.ttf" in files
+    assert len([f for f in files if f.startswith("OFL-")]) == 5
 
 
 # --- rendering with ffmpeg/libass ---------------------------------------------------------
@@ -198,3 +199,42 @@ def test_srt_cues():
         "2\n00:00:02,000 --> 00:00:03,200\nNext one\n"
     )
     assert build_srt([], clip_start=0, clip_end=10) is None
+
+
+# --- other languages -----------------------------------------------------------------------
+
+ARABIC = [W(" مرحبا", 0.2, 1.0), W(" بكم", 1.1, 1.6), W(" في", 1.7, 2.0), W(" القناة", 2.1, 2.8)]
+
+
+def test_arabic_switches_to_the_arabic_font_at_the_same_em():
+    from twapza.captions.style import ARABIC_FONT, EM_PER_ASS_SIZE, has_arabic
+
+    assert has_arabic("مرحبا") and not has_arabic("¿Qué pasó, señora? Straße garçon")
+    latin = build_ass([W(" hola", 0, 1)], clip_start=0, clip_end=2, settings=CaptionSettings(), width=1080, height=1920)
+    arabic = build_ass(ARABIC, clip_start=0, clip_end=3, settings=CaptionSettings(), width=1080, height=1920,
+                       hook="أفضل لحظة")
+    style = lambda doc, name: next(l for l in doc.splitlines() if l.startswith(f"Style: {name},")).split(",")  # noqa: E731
+    lat, ara = style(latin, "Caption"), style(arabic, "Caption")
+    assert lat[1] == "Montserrat ExtraBold" and ara[1] == ARABIC_FONT[0] and style(arabic, "Hook")[1] == ARABIC_FONT[0]
+    assert int(ara[2]) == pytest.approx(int(lat[2]) * EM_PER_ASS_SIZE["montserrat"] / ARABIC_FONT[1], abs=1)
+    assert ara[-1] == "-1" and lat[-1] == "-1"  # libass detects the base direction (RTL for Arabic)
+
+
+@requires_ffmpeg
+def test_arabic_captions_read_right_to_left(tmp_path):
+    """The first spoken word (highlighted) must be drawn on the right."""
+    w, h = 540, 960
+    settings = CaptionSettings(words_per_line=4, highlight_color="#00FF00", text_color="#FFFFFF")
+    (tmp_path / "a.ass").write_text(build_ass(ARABIC, clip_start=0, clip_end=3, settings=settings, width=w, height=h))
+    src = tmp_path / "black.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=black:size={w}x{h}:d=1:r=10",
+                    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", str(src)], check=True)
+    out = tmp_path / "out.mp4"
+    ffmpeg.cut_clip(src, out, 0, 1, preset="ultrafast",
+                    video_filter=ffmpeg.ass_filter(tmp_path / "a.ass", FONTS_DIR))
+    frame = _frame(out, 0.5, w, h)  # "مرحبا" is being spoken
+    rows = range(int(h * 0.6), int(h * 0.85))
+    green = lambda r, g, b: g > 180 and r < 100 and b < 100  # noqa: E731
+    xs = [x for y in rows for x in range(w) if green(*frame[(y * w + x) * 3:(y * w + x) * 3 + 3])]
+    assert len(xs) > 100                       # real glyphs, not empty boxes
+    assert sum(xs) / len(xs) > w * 0.6         # on the right side

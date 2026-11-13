@@ -145,6 +145,12 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   (`exports.output_size`, rotation-aware via `MediaInfo.display_size`). Fonts are bundled
   (OFL) in `captions/fonts/` and also served at `/api/fonts` for the browser preview; keep
   `FONTS`/sizes in `captions/style.py` + `ass.py` in sync with `frontend/.../CaptionOptions.tsx`.
+  **Languages**: Whisper auto-detects the spoken language (or `TWAPZA_WHISPER_LANGUAGE`); the Latin
+  fonts cover Spanish/French/German/Dutch accents. Arabic: `ass.font_for` switches any caption/hook/text
+  containing Arabic to the bundled `NotoSansArabic-ExtraBold.ttf` (`style.ARABIC_FONT`, sized so the em
+  matches the chosen font), and every text style uses Encoding `-1` so libass picks the base direction
+  (right-to-left). Browser previews fall back to the same font (`ARABIC_FALLBACK`). Other scripts
+  (CJK, Cyrillic, …) would need their own bundled font the same way.
 - **Trimming**: `PATCH /api/clips/{id}` changes start/end; `suggested_start/end` keep the
   original suggestion for "reset". Thumbnails live in `thumbs/<clip>/<start_ms>.jpg` and are
   regenerated lazily when missing.

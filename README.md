@@ -24,7 +24,8 @@ YouTube Shorts (and TikTok / Instagram Reels). Paste a link to your video, or up
   **Look for…** to tell the AI what kind of moments you want. Your download settings are remembered.
 - Download clips one by one or all at once as a ZIP.
 - The interface is available in **English, Nederlands, Español, Deutsch, Français and العربية**
-  (pick it in the top bar).
+  (pick it in the top bar). Videos can be in any language Whisper knows (it detects it); subtitles,
+  titles and descriptions follow the video's language, Arabic included (right-to-left, own font).
 
 Twapza is for **your own** videos: paste a link to a single YouTube video you posted (public or
 unlisted), or upload a file (mp4, mov or mkv, up to 20 GB). Videos can be up to 3 hours long.

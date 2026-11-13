@@ -11,7 +11,7 @@ highlight colour, which gives the popular karaoke-style "active word" look.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from twapza.captions.style import EM_PER_ASS_SIZE, FONTS, CaptionSettings
+from twapza.captions.style import ARABIC_FONT, EM_PER_ASS_SIZE, FONTS, CaptionSettings, has_arabic
 from twapza.clipping.snapping import word_strength
 from twapza.clipping.timeline import Segment, TimedWord, map_span, map_words, total_length
 from twapza.transcription.base import Word
@@ -154,6 +154,18 @@ def box_text(text: str) -> str:
     return "\\N".join(line for line in lines if line)
 
 
+def font_for(font: str, text: str) -> tuple[str, float]:
+    """(ASS family, size factor) for ``font`` showing ``text``.
+
+    Arabic text switches to the bundled Arabic font, scaled so its em matches ``font``'s
+    (the browser previews fall back to the same font at the same em).
+    """
+    family = FONTS.get(font, FONTS["montserrat"])[0]
+    if not has_arabic(text):
+        return family, 1.0
+    return ARABIC_FONT[0], EM_PER_ASS_SIZE.get(font, 0.643) / ARABIC_FONT[1]
+
+
 def box_size(box: TextBox, width: int) -> int:
     """ASS Fontsize that renders the em the browser editor showed."""
     return max(8, round(box.size * width / EM_PER_ASS_SIZE.get(box.font, 0.643)))
@@ -208,9 +220,11 @@ def build_ass(
     outline = max(2, round(short * 0.006))
     margin_lr = round(width * 0.06)
     styles = []
+    # Encoding -1 (libass extension) = detect the base direction, so Arabic reads right to left.
     if settings:
-        family, multiplier = FONTS[settings.font]
-        size = round(short * SIZE_FACTOR[settings.size] * multiplier)
+        multiplier = FONTS[settings.font][1]
+        family, scale = font_for(settings.font, " ".join(w.text for w in timed))
+        size = round(short * SIZE_FACTOR[settings.size] * multiplier * scale)
         alignment, margin_v = {
             # bottom sits above the TikTok/Shorts caption & button area on vertical video
             "bottom": (2, round(height * (0.2 if vertical else 0.08))),
@@ -220,10 +234,11 @@ def build_ass(
         styles.append(
             f"Style: Caption,{family},{size},{ass_color(settings.text_color)},{ass_color(settings.text_color)},"
             f"{ass_color(settings.outline_color)},&H80000000,0,0,0,0,100,100,0,0,1,{outline},"
-            f"{max(1, outline // 2)},{alignment},{margin_lr},{margin_lr},{margin_v},1")
+            f"{max(1, outline // 2)},{alignment},{margin_lr},{margin_lr},{margin_v},-1")
     if hook_ev:
-        family, multiplier = FONTS[settings.font if settings else "montserrat"]
-        size = round(short * HOOK_SIZE * multiplier)
+        font = settings.font if settings else "montserrat"
+        family, scale = font_for(font, hook or "")
+        size = round(short * HOOK_SIZE * FONTS[font][1] * scale)
         # Top third, clear of the platform UI; centre when the captions already use the top.
         top = not (settings and settings.position == "top")
         alignment, margin_v = (8, round(height * (0.14 if vertical else 0.07))) if top else (5, 0)
@@ -231,11 +246,11 @@ def build_ass(
         # BorderStyle 3 = opaque box behind the text (drawn in the outline colour).
         styles.append(
             f"Style: Hook,{family},{size},&H00FFFFFF,&H00FFFFFF,&H33000000,&H33000000,0,0,0,0,"
-            f"100,100,0,0,3,{box},0,{alignment},{round(width * 0.09)},{round(width * 0.09)},{margin_v},1")
+            f"100,100,0,0,3,{box},0,{alignment},{round(width * 0.09)},{round(width * 0.09)},{margin_v},-1")
 
     for i, box in enumerate(boxes):
-        family = FONTS.get(box.font, FONTS["montserrat"])[0]
-        size = box_size(box, width)
+        family, scale = font_for(box.font, box.text)
+        size = round(box_size(box, width) * scale)
         color = ass_color(box.color)
         if box.style == "box":  # opaque dark box behind the text (BorderStyle 3)
             border = (3, max(4, round(size * 0.22)), 0, "&H33000000")
@@ -246,7 +261,7 @@ def build_ass(
         kind, outline, shadow, outline_color = border
         styles.append(
             f"Style: Box{i},{family},{size},{color},{color},{outline_color},&H80000000,0,0,0,0,"
-            f"100,100,0,0,{kind},{outline},{shadow},5,0,0,0,1")
+            f"100,100,0,0,{kind},{outline},{shadow},5,0,0,0,-1")
     if progress_color:
         color = ass_color(progress_color)
         styles.append("Style: Track,Arial,20,&H99000000,&H99000000,&H00000000,&H00000000,0,0,0,0,"

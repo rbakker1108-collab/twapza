@@ -23,9 +23,14 @@ MAX_GAP = 0.45       # silences longer than this (s) are shortened …
 KEEP_GAP = 0.2       # … to this much (split around the cut, so speech isn't clipped)
 MIN_SEGMENT = 0.08   # drop slivers shorter than this (s)
 TEASER_MIN, TEASER_MAX = 1.5, 6.0
-# Hesitation sounds removed by the optional "remove filler words" (English + Dutch/German).
-FILLERS = frozenset({"um", "umm", "uh", "uhh", "uhm", "erm", "er", "ah", "ahh", "hmm", "mm", "mhm",
-                     "eh", "ehm", "euh", "uhh", "ähm", "äh"})
+# Hesitation sounds removed by the optional "remove filler words" (only sounds, never real words).
+FILLERS = frozenset({
+    "um", "umm", "uh", "uhh", "uhm", "erm", "er", "ah", "ahh", "hmm", "mm", "mhm",  # English
+    "eh", "ehm", "euh", "ähm", "äh",                                                  # Dutch, German
+    "em", "emm", "eeh",                                                               # Spanish
+    "heu", "hum", "bah",                                                              # French
+    "اه", "آه", "امم", "ممم", "اممم",                                                 # Arabic
+})
 
 
 @dataclass(frozen=True)

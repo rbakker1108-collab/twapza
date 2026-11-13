@@ -1,5 +1,6 @@
 """User-facing caption options (part of ExportSettings) and the bundled fonts."""
 
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -7,11 +8,19 @@ from pydantic import BaseModel, Field
 
 FONTS_DIR = Path(__file__).parent / "fonts"
 
-# How many CSS pixels of em one unit of ASS Fontsize gives (libass sizes fonts by their
-# ascent+descent, not the em). Measured by rendering a capital H with libass and dividing its
-# height by the font's OS/2 cap height (tests/test_overlays.py checks it). The browser previews
-# use these to show text at the size it will have in the download.
+# How many CSS pixels of em one unit of ASS Fontsize gives: libass sizes a font by its OS/2
+# usWinAscent+usWinDescent, so this is unitsPerEm / (winAscent + winDescent). Checked by rendering
+# (tests/test_overlays.py). The browser previews use these to show text at its download size.
 EM_PER_ASS_SIZE: dict[str, float] = {"montserrat": 0.643, "poppins": 0.564, "anton": 0.576, "bebas": 0.771}
+
+# The caption fonts have no Arabic letters: text containing Arabic is drawn in this bundled
+# font instead (family name as libass sees it, em per ASS size as above), sized to the same em.
+ARABIC_FONT = ("Noto Sans Arabic ExtraBold", 0.461)
+_ARABIC = re.compile("[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
+
+
+def has_arabic(text: str) -> bool:
+    return bool(_ARABIC.search(text))
 
 # id -> (family name as libass sees it, size multiplier so all fonts look similar in size)
 FONTS: dict[str, tuple[str, float]] = {

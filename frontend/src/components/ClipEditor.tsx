@@ -8,7 +8,7 @@ import { msg, useT } from "../i18n";
 import { captionAt, groupWords, type TimedWord } from "../lib/captions";
 import { formatDuration } from "../lib/format";
 import { isFinished, runAndDownload } from "../lib/jobs";
-import { CAPTION_FONTS } from "./CaptionOptions";
+import { ARABIC_FALLBACK, CAPTION_FONTS } from "./CaptionOptions";
 import { canUpscale, ExportOptions } from "./ExportOptions";
 import { HookTextEditor } from "./HookTextEditor";
 import { ProgressBar } from "./ProgressBar";
@@ -296,7 +296,7 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                 <span className="pointer-events-none absolute inset-x-[9%] top-[14%] text-center leading-tight">
                   <span
                     className="box-decoration-clone rounded bg-black/80 px-1.5 py-0.5 text-white"
-                    style={{ fontSize: hookPx, fontFamily: `"${hookFont.css}", sans-serif` }}
+                    style={{ fontSize: hookPx, fontFamily: `"${hookFont.css}", ${ARABIC_FALLBACK}`, fontWeight: 800 }}
                   >
                     {clip.title}
                   </span>
@@ -328,7 +328,8 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                     className="pointer-events-none absolute inset-x-[6%] text-center leading-tight"
                     style={{
                       ...place,
-                      fontFamily: `"${font.css}", sans-serif`,
+                      fontFamily: `"${font.css}", ${ARABIC_FALLBACK}`,
+                      fontWeight: 800,
                       fontSize: short * CAPTION_SIZE[c.size] * font.scale * font.em,
                       color: c.text_color,
                       WebkitTextStroke: `${Math.max(1, short * 0.006) * 2}px ${c.outline_color}`,
@@ -353,7 +354,8 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
                 const style: CSSProperties = {
                   left: `${o.x * 100}%`,
                   top: `${o.y * 100}%`,
-                  fontFamily: `"${font.css}", sans-serif`,
+                  fontFamily: `"${font.css}", ${ARABIC_FALLBACK}`,
+                      fontWeight: 800,
                   fontSize: `${px}px`,
                   color: o.color,
                 };

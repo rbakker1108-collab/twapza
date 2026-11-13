@@ -21,6 +21,8 @@ export const CAPTION_FONTS: Record<CaptionFont, { label: string; css: string; sc
   anton: { label: "Anton", css: "Twapza Anton", scale: 1.1, em: 0.576 },
   bebas: { label: "Bebas Neue", css: "Twapza Bebas", scale: 1.25, em: 0.771 },
 };
+/** Arabic letters fall back to the same Arabic font the export uses (captions/style.py ARABIC_FONT). */
+export const ARABIC_FALLBACK = '"Noto Sans Arabic Variable", sans-serif';
 const SIZE_FACTOR = { small: 0.06, medium: 0.075, large: 0.095 };
 
 
@@ -51,7 +53,8 @@ export function CaptionPreview({ value, vertical }: { value: CaptionSettings; ve
         className="absolute inset-x-0 px-[6%] text-center leading-tight"
         style={{
           ...placement,
-          fontFamily: `"${font.css}", sans-serif`,
+          fontFamily: `"${font.css}", ${ARABIC_FALLBACK}`,
+                      fontWeight: 800,
           fontSize: `${short * SIZE_FACTOR[value.size] * font.scale * font.em}px`,
           color: value.text_color,
           WebkitTextStroke: `${outline}px ${value.outline_color}`,

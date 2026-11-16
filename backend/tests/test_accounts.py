@@ -609,3 +609,29 @@ def test_accounts_survive_the_move_to_stripe(isolated_env):
         assert u is not None and u.price_id == "123" and u.plan == "pro"
     with engine.connect() as conn:
         assert conn.execute(text("PRAGMA user_version")).scalar() == SCHEMA_VERSION
+
+
+def test_change_to_the_current_plan_is_refused_with_a_clear_message(free_client, fake_billing):
+    c = free_client
+    fake_billing.subs["sub_1"] = subscription("price_cy")
+    send_webhook(c, "checkout.session.completed", checkout_completed(user("free@example.com").id))
+    r = c.post("/api/billing/change-plan", json={"plan": "creator", "period": "yearly"})
+    assert r.status_code == 409 and r.json()["detail"] == "That's already your plan."
+    assert fake_billing.changes == []
+
+
+def test_stripe_errors_explain_the_reason():
+    import httpx
+
+    from twapza.accounts.billing import BillingError, Stripe
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/subscriptions/sub_1"):
+            return httpx.Response(200, json=subscription("price_cy"))
+        return httpx.Response(400, json={"error": {"type": "invalid_request_error", "message": "No such price: 'x'"}})
+
+    stripe = Stripe("sk_test_1", api_version="v", transport=httpx.MockTransport(handler))
+    with pytest.raises(BillingError, match="That's already your plan"):
+        stripe.change_plan_url(subscription_id="sub_1", customer_id="cus_1", price_id="price_cy", return_url="u")
+    with pytest.raises(BillingError, match="No such price"):
+        stripe.portal(customer_id="cus_1", return_url="u")

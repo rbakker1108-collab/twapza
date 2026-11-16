@@ -83,6 +83,8 @@ def change_plan(body: CheckoutRequest, user: User = Depends(current_user), setti
     if not _has_subscription(user) or not user.customer_id:
         raise HTTPException(status.HTTP_409_CONFLICT, "You don't have a subscription to change.")
     price = _price(settings, body.plan, body.period)
+    if price == user.price_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "That's already your plan.")
     try:
         url = billing.change_plan_url(subscription_id=user.subscription_id, customer_id=user.customer_id,
                                       price_id=price, return_url=_account_url(settings, "?upgraded=1"))

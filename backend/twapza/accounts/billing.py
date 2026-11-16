@@ -158,7 +158,9 @@ class Stripe:
             except ValueError:
                 error = {}
             log.warning("Stripe %s %s -> %s: %s", method, path, r.status_code, error or r.text[:500])
-            raise BillingError("The payment provider refused the request. Try again later.")
+            reason = error.get("message") if error.get("type") == "invalid_request_error" else None
+            raise BillingError(f"The payment provider refused the request: {reason}" if reason
+                               else "The payment provider refused the request. Try again later.")
         return r.json() if r.content else {}
 
     def create_checkout(self, *, price_id: str, user: User, success_url: str, cancel_url: str) -> str:
@@ -198,6 +200,8 @@ class Stripe:
         item = first_item(self.get_subscription(subscription_id))
         if not item.get("id"):
             raise BillingError("Couldn't find your current subscription.")
+        if (item.get("price") or {}).get("id") == price_id:
+            raise BillingError("That's already your plan.")
         flow = {
             "type": "subscription_update_confirm",
             "subscription_update_confirm": {

@@ -463,3 +463,22 @@ def test_lemonsqueezy_client_request_shape():
     assert data["attributes"]["checkout_data"] == {"email": "a@example.com", "custom": {"user_id": "u1"}}
     assert data["relationships"]["store"]["data"] == {"type": "stores", "id": "42"}
     assert data["relationships"]["variant"]["data"] == {"type": "variants", "id": "101"}
+
+
+def test_client_ip_counts_only_our_proxies(monkeypatch):
+    from starlette.requests import Request
+
+    from twapza.accounts.ratelimit import client_ip
+
+    def req(xff: str | None) -> Request:
+        headers = [(b"x-forwarded-for", xff.encode())] if xff else []
+        return Request({"type": "http", "headers": headers, "client": ("10.0.0.9", 1)})
+
+    # nginx only: the last entry is what nginx saw; earlier ones were sent by the browser
+    assert client_ip(req("6.6.6.6, 1.2.3.4")) == "1.2.3.4"
+    assert client_ip(req(None)) == "10.0.0.9"
+    monkeypatch.setenv("TWAPZA_TRUSTED_PROXY_HOPS", "2")  # Caddy + nginx
+    get_settings.cache_clear()
+    assert client_ip(req("6.6.6.6, 1.2.3.4, 172.18.0.5")) == "1.2.3.4"
+    assert client_ip(req("172.18.0.5")) == "172.18.0.5"
+    get_settings.cache_clear()

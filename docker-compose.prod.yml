@@ -1,0 +1,33 @@
+# Production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Adds Caddy in front (HTTPS on ports 80/443 for TWAPZA_DOMAIN) and stops publishing the
+# plain-HTTP web port. Set TWAPZA_DOMAIN etc. in .env (see .env.example and README "Going live").
+
+services:
+  twapza-caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      TWAPZA_DOMAIN: ${TWAPZA_DOMAIN:-www.twapza.io}
+      TWAPZA_REDIRECT_DOMAIN: ${TWAPZA_REDIRECT_DOMAIN:-twapza.io}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - twapza-web
+    restart: unless-stopped
+
+  twapza-web:
+    ports: !reset []
+
+  twapza-api:
+    environment:
+      TWAPZA_PUBLIC_URL: https://${TWAPZA_DOMAIN:-www.twapza.io}
+      TWAPZA_TRUSTED_PROXY_HOPS: "2"  # Caddy + nginx
+
+volumes:
+  caddy-data:
+  caddy-config:

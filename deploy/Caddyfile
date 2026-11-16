@@ -1,0 +1,22 @@
+# Production front door: HTTPS certificates (Let's Encrypt) are fetched and renewed automatically.
+# The domains come from .env (TWAPZA_DOMAIN, TWAPZA_REDIRECT_DOMAIN); see README "Going live".
+
+{$TWAPZA_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+	reverse_proxy twapza-web:80 {
+		# Stream job progress (Server-Sent Events) and big uploads without buffering.
+		flush_interval -1
+	}
+}
+
+# twapza.io -> https://www.twapza.io (one address for cookies, links and search engines)
+{$TWAPZA_REDIRECT_DOMAIN} {
+	redir https://{$TWAPZA_DOMAIN}{uri} permanent
+}

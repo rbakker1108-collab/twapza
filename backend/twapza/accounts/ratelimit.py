@@ -8,10 +8,18 @@ log = logging.getLogger(__name__)
 
 
 def client_ip(request: Request) -> str:
-    """The browser's IP: nginx appends it as the last X-Forwarded-For entry."""
-    forwarded = request.headers.get("x-forwarded-for", "")
+    """The browser's IP from X-Forwarded-For, counting only entries added by our own proxies.
+
+    Each proxy appends the address it received the request from, so with N proxies in front
+    (nginx = 1; Caddy + nginx in production = 2) the browser is the N-th entry from the end.
+    Entries further left come from the browser itself and can't be trusted.
+    """
+    from twapza.config import get_settings
+
+    hops = max(1, get_settings().trusted_proxy_hops)
+    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
     if forwarded:
-        return forwarded.split(",")[-1].strip()
+        return forwarded[-min(hops, len(forwarded))]
     return request.client.host if request.client else "unknown"
 
 

@@ -131,9 +131,40 @@ docker compose exec twapza-api python -m twapza.users set-plan someone@example.c
 docker compose exec twapza-api python -m twapza.users delete someone@example.com
 ```
 
-**Before you open it to the public**: run it behind HTTPS on your own domain, don't expose port 8000
-(only the web port), set up backups of the `twapza-data` volume (the database now holds accounts),
-and publish terms and a privacy policy.
+**Before you open it to the public**: run it with HTTPS on your domain (see "Going live" below), set
+up backups of the `twapza-data` volume (the database now holds accounts), and publish terms and a
+privacy policy.
+
+## Going live on www.twapza.io
+
+`docker-compose.prod.yml` puts [Caddy](https://caddyserver.com/) in front of Twapza: it serves
+**https://www.twapza.io** with a free Let's Encrypt certificate (fetched and renewed automatically),
+redirects `twapza.io` and plain `http://` to it, and stops publishing the unencrypted port 8080.
+
+1. **Rent a server**: any Linux VPS with Docker, e.g. Hetzner (CPX31/CX32, 4 vCPU / 8 GB RAM, about
+   €10-15 a month) or DigitalOcean. Transcription runs on the CPU, so more cores = faster; 8 GB RAM
+   is the comfortable minimum. Give it enough disk for a day of uploads (80 GB+).
+2. **Point the domain at it**: at the company where you bought twapza.io, add two DNS records:
+   `A  @    <server IP>` and `A  www  <server IP>` (plus `AAAA` records if the server has IPv6).
+3. **Open only ports 22, 80 and 443** in the server's firewall.
+4. On the server:
+
+   ```bash
+   git clone <this repository> twapza && cd twapza
+   cp .env.example .env   # fill in ANTHROPIC_API_KEY, SMTP, Lemon Squeezy; TWAPZA_DOMAIN=www.twapza.io
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+   ```
+
+   After a minute https://www.twapza.io works (Caddy needs the DNS records from step 2 to get its
+   certificate; `docker compose logs twapza-caddy` shows what it's doing).
+5. **Lemon Squeezy webhook URL**: `https://www.twapza.io/api/billing/webhook`.
+6. **Email**: in your email service (Resend, Postmark, Brevo, ...) add twapza.io as a sending domain
+   and create the DNS records it asks for (SPF/DKIM), so reset emails from `no-reply@twapza.io`
+   don't land in spam.
+7. **Backups**: the `twapza-data` volume holds the database with all accounts; copy
+   `/data/twapza.db` off the server daily (e.g. your VPS provider's backup option).
+
+Update later with `git pull` and the same `up -d --build` command.
 
 ## Website
 

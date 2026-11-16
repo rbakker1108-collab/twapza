@@ -299,6 +299,13 @@ cp .env.example .env        # add ANTHROPIC_API_KEY when you reach AI highlights
 docker compose up --build   # UI: http://localhost:8080 (sign up at /signup) · API docs: http://localhost:8000/docs
 ```
 
+Production (www.twapza.io): `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
+adds Caddy (`deploy/Caddyfile`: automatic Let's Encrypt HTTPS for `TWAPZA_DOMAIN`, redirect from
+`TWAPZA_REDIRECT_DOMAIN`, security headers, unbuffered SSE), unpublishes port 8080, and sets
+`TWAPZA_PUBLIC_URL=https://…` and `TWAPZA_TRUSTED_PROXY_HOPS=2` (Caddy + nginx; `ratelimit.client_ip`
+reads the N-th X-Forwarded-For entry from the end). `frontend/public/robots.txt` + `sitemap.xml` list the
+public pages on www.twapza.io (add new marketing pages/guides there).
+
 One worker processes jobs one at a time. For parallel exports/transcriptions:
 `docker compose up --scale twapza-worker=2`. GPU transcription (untested on real hardware):
 `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build`.

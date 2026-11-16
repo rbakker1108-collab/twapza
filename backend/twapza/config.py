@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     # login cookie Secure.
     public_url: str = "http://localhost:8080"
     session_days: int = 30
+    # Reverse proxies in front of the API that add X-Forwarded-For (nginx = 1, Caddy + nginx = 2).
+    trusted_proxy_hops: int = 1
     # Password-reset emails. Without an SMTP host the link is written to the API log instead.
     smtp_host: str | None = None
     smtp_port: int = 587

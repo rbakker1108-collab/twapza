@@ -76,16 +76,17 @@ export function usePlan(): Account["plan"] {
   );
 }
 
-/** Start paying for a plan: a new Lemon Squeezy checkout, or a switch of the current subscription. */
+/** Start paying for a plan: a new Stripe Checkout, or Stripe's page to confirm switching the current subscription. */
+/** Stripe subscription statuses of someone who is (still) paying. */
+export const PAYING_STATUSES = ["active", "trialing", "past_due", "paused"];
+
 export async function choosePlan(
   account: Account,
   plan: PlanId,
   period: BillingPeriod,
-): Promise<Account | null> {
+): Promise<void> {
   const sub = account.subscription;
-  const active = sub && sub.plan !== "free" && ["active", "on_trial", "past_due", "paused"].includes(sub.status ?? "");
-  if (active) return api.changePlan(plan, period);
-  const { url } = await api.checkout(plan, period);
+  const active = sub && sub.plan !== "free" && PAYING_STATUSES.includes(sub.status ?? "");
+  const { url } = active ? await api.changePlan(plan, period) : await api.checkout(plan, period);
   window.location.assign(url);
-  return null;
 }

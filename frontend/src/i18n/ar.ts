@@ -488,7 +488,7 @@ const messages: Record<string, string> = {
   "Password": "كلمة المرور",
   "Password changed. Other devices are logged out.": "تم تغيير كلمة المرور. تم تسجيل الخروج من الأجهزة الأخرى.",
   "Payment method, invoices, cancel": "طريقة الدفع، الفواتير، الإلغاء",
-  "Payments are handled by Lemon Squeezy. Prices exclude VAT/sales tax, which is added at checkout where it applies.": "تتولى Lemon Squeezy عمليات الدفع. الأسعار لا تشمل ضريبة القيمة المضافة/ضريبة المبيعات، وتُضاف عند الدفع حيث تنطبق.",
+  "Payments are handled securely by Stripe. Prices exclude VAT/sales tax, which is added at checkout where it applies.": "تتم معالجة المدفوعات بأمان عبر Stripe. الأسعار لا تشمل ضريبة القيمة المضافة/ضريبة المبيعات، وتُضاف عند الدفع حيث تنطبق.",
   "Plans": "الخطط",
   "Renews on {date}.": "يتجدد في {date}.",
   "Reset your password": "أعد تعيين كلمة المرور",

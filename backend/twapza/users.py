@@ -43,8 +43,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"No account with email {args.email}", file=sys.stderr)
             return 1
         if args.command == "set-plan":
-            if user.subscription_status not in (None, "manual", "cancelled", "expired") and args.plan != user.plan:
-                print("This account has a paid subscription; change it in Lemon Squeezy instead.", file=sys.stderr)
+            if user.subscription_status not in (None, "manual", "canceled", "incomplete_expired") and args.plan != user.plan:
+                print("This account has a paid subscription; change it in Stripe instead.", file=sys.stderr)
                 return 1
             user.plan = args.plan
             user.subscription_status = None if args.plan == "free" else "manual"

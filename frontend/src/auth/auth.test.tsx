@@ -107,13 +107,16 @@ describe("accounts", () => {
       subscription: { plan: "creator", period: "yearly", status: "active", renews_at: "2027-05-20T09:00:00Z", ends_at: null },
     });
     vi.spyOn(api, "me").mockResolvedValue(creator);
-    const change = vi.spyOn(api, "changePlan").mockResolvedValue(makeAccount("pro", { subscription: { ...creator.subscription!, plan: "pro" } }));
+    const change = vi.spyOn(api, "changePlan").mockResolvedValue({ url: "https://billing.stripe.example/confirm" });
+    const assign = vi.fn();
+    vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, assign } as Location);
     renderAt("/account", <AccountPage />);
     expect(await screen.findByText("12 of 300 min")).toBeInTheDocument();
     expect(screen.getByText(/Renews on/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Manage subscription" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Switch to Pro" }));
     await waitFor(() => expect(change).toHaveBeenCalledWith("pro", "yearly"));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://billing.stripe.example/confirm"));
   });
 
   it("the app shows the account badge once logged in", async () => {

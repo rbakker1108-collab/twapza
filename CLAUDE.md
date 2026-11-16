@@ -181,7 +181,7 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `python -m twapza.users list | set-plan EMAIL PLAN | delete EMAIL` (`set-plan` = status `manual`).
 - **Plans + limits** (`accounts/plans.py`, pure; `usage.py`): Free 60 min/month, videos ≤ 60 min, watermark;
   Creator 300 min, ≤ 120 min, `editing`; Pro 1200 min, ≤ 180 min, `zip`, `priority`. `effective_plan_id`
-  (paid statuses active/on_trial/past_due/manual, cancelled until `ends_at`), months run from
+  (paid statuses active/trialing/past_due/manual; a passed `ends_at` counts as ended), months run from
   `User.period_anchor` (`period_bounds`). Minutes are charged once per project at the end of ingest
   (`usage.record_usage` → `UsageEvent`); ingest/import fail with a readable message when the video is too long
   for the plan or doesn't fit the minutes left (`usage.video_problem`; import checks before downloading);
@@ -193,17 +193,26 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   drain first. Frontend: `auth/AuthProvider` (`useAuth`, `usePlan`: everything allowed when no account is
   loaded, e.g. component tests; `choosePlan`), `auth/UpgradeNote`, locked boosts in `ExportOptions`, locked
   editor tabs, `DownloadAllButton`/`DescriptionPanel` upgrade notes.
-- **Billing** (`accounts/billing.py`, `api/routes/billing.py`): Lemon Squeezy (merchant of record: they
-  handle VAT/sales tax). `POST /api/billing/checkout {plan, period}` → hosted checkout URL (custom data
-  `user_id`, redirect `/account?upgraded=1`, which polls `/me` until the webhook lands); `POST
-  /api/billing/change-plan` PATCHes the subscription's variant; `GET /api/billing/portal` fetches a fresh signed
-  customer-portal URL. `POST /api/billing/webhook`: verifies `X-Signature` (hex HMAC-SHA256 of the raw body),
-  handles `subscription_*` events via `apply_subscription` (variant → plan/period from the four
-  `TWAPZA_LEMONSQUEEZY_VARIANT_*` settings, ignores events older than `subscription_updated_at`, user found by
-  `meta.custom_data.user_id` or `subscription_id`). Without `TWAPZA_LEMONSQUEEZY_API_KEY`/`STORE_ID` billing
-  endpoints answer 503 and the UI says paid plans can't be bought yet. The route dependency `billing_client` is
-  replaced by a fake in tests; `test_accounts.py` also checks the real client's request shape with an httpx
-  mock transport.
+- **Billing** (`accounts/billing.py`, `api/routes/billing.py`): Stripe Billing + **Managed Payments**
+  (Stripe = merchant of record; `TWAPZA_STRIPE_MANAGED_PAYMENTS=false` → plain Stripe, we are the seller).
+  REST via httpx, no SDK, `Stripe-Version: TWAPZA_STRIPE_API_VERSION` (2026-10-28.endive; params checked
+  against the stripe-python 17 SDK), form-encoded with `billing.encode` (`a[b][0]=…`). `POST
+  /api/billing/checkout {plan, period}` → Checkout Session (`mode=subscription`, `managed_payments[enabled]`,
+  `client_reference_id` + `subscription_data.metadata.user_id`, `customer` when known else `customer_email`;
+  success `/account?upgraded=1`, which polls `/me` until the subscription changes). `POST
+  /api/billing/change-plan` → URL of a portal `subscription_update_confirm` flow (Stripe prorates); `GET
+  /api/billing/portal` → portal session (`TWAPZA_STRIPE_PORTAL_CONFIGURATION`). `POST /api/billing/webhook`
+  verifies `Stripe-Signature` (`t=…,v1=` HMAC-SHA256 of `"{t}.{body}"`, 5 min tolerance), and for
+  `checkout.session.completed` / `customer.subscription.*` **re-reads the subscription from Stripe** and
+  `apply_subscription` copies it (price → plan/period via the four `TWAPZA_STRIPE_PRICE_*`; period end from the
+  subscription item; `cancel_at_period_end`/`cancel_at` → `ends_at`), so duplicate/out-of-order events are
+  harmless. User found by `client_reference_id`/`metadata.user_id`, then `subscription_id`, then `customer_id`.
+  Without `TWAPZA_STRIPE_SECRET_KEY` billing endpoints answer 503 and the UI says paid plans can't be bought.
+  `python -m twapza.stripe_setup` creates products (tax code `txcd_10103000`), the four prices (tax-exclusive,
+  lookup keys `twapza_<plan>_<period>`) and a portal configuration, and prints the `.env` lines. Tests replace
+  the `billing_client` dependency with `FakeStripe`; the real client's request shape is checked with an httpx
+  mock transport. (Lemon Squeezy was used before; it closed to new stores. Schema v9 renamed
+  `User.variant_id` → `price_id`.)
 
 ## Layout
 
@@ -232,8 +241,9 @@ backend/twapza/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
-  accounts/            passwords.py, plans.py (pure limits), usage.py, users.py, billing.py (Lemon Squeezy), mail.py, ratelimit.py
+  accounts/            passwords.py, plans.py (pure limits), usage.py, users.py, billing.py (Stripe), mail.py, ratelimit.py
   users.py             account admin CLI (list, set-plan, delete)
+  stripe_setup.py      creates Stripe products/prices/portal config, prints the .env lines
   waitlist.py          early-access list CLI (CSV export, --remove)
   cleanup.py           expiry + orphan sweep + job watchdog loop; `python -m twapza.cleanup [--once]`
 backend/tests/         pytest (unit + ffmpeg integration on synthetic media)
@@ -359,7 +369,7 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 
 11. ✅ Website: landing page, Features, Solutions, Pricing, Resources (guides), early-access waitlist;
     app moved to `/app`.
-12. ✅ Accounts (email + password, sessions, reset, delete) and paid plans via Lemon Squeezy: monthly
+12. ✅ Accounts (email + password, sessions, reset, delete) and paid plans via Stripe (Managed Payments): monthly
     minutes, video length, watermark, Creator/Pro features, priority queue, account page.
 
 Possible next steps: email verification, Google login, terms + privacy pages, face-tracked vertical crop

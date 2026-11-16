@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
             "claude_model": s.claude_model,
             "youtube_enabled": s.youtube_enabled,
             "billing_enabled": s.billing_enabled,
-            "billing_plans": sorted(f"{plan}_{period}" for plan, period in s.variants),
+            "billing_plans": sorted(f"{plan}_{period}" for plan, period in s.prices),
         }
 
     return app

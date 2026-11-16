@@ -281,8 +281,9 @@ export const api = {
   deleteAccount: (password: string) => request<void>("/api/auth/delete-account", json({ password })),
   checkout: (plan: PlanId, period: BillingPeriod) =>
     request<{ url: string }>("/api/billing/checkout", json({ plan, period })),
+  /** Stripe's page to confirm switching the subscription to another plan/period. */
   changePlan: (plan: PlanId, period: BillingPeriod) =>
-    request<Account>("/api/billing/change-plan", json({ plan, period })),
+    request<{ url: string }>("/api/billing/change-plan", json({ plan, period })),
   billingPortal: () => request<{ url: string }>("/api/billing/portal"),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   listProjects: () => request<ProjectSummary[]>("/api/projects"),

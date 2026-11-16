@@ -488,7 +488,7 @@ const messages: Record<string, string> = {
   "Password": "Wachtwoord",
   "Password changed. Other devices are logged out.": "Wachtwoord gewijzigd. Andere apparaten zijn uitgelogd.",
   "Payment method, invoices, cancel": "Betaalmethode, facturen, opzeggen",
-  "Payments are handled by Lemon Squeezy. Prices exclude VAT/sales tax, which is added at checkout where it applies.": "Betalingen lopen via Lemon Squeezy. Prijzen zijn exclusief btw; die wordt bij het afrekenen toegevoegd waar dat geldt.",
+  "Payments are handled securely by Stripe. Prices exclude VAT/sales tax, which is added at checkout where it applies.": "Betalingen lopen veilig via Stripe. Prijzen zijn exclusief btw; die wordt bij het afrekenen toegevoegd waar dat geldt.",
   "Plans": "Abonnementen",
   "Renews on {date}.": "Wordt verlengd op {date}.",
   "Reset your password": "Wachtwoord opnieuw instellen",

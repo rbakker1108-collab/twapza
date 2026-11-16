@@ -4,9 +4,10 @@ import calendar
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
-# Lemon Squeezy statuses during which the paid plan applies. "cancelled" also applies until
-# ends_at (they paid until then); "manual" is a plan set by hand (`python -m twapza.users`).
-ACTIVE_STATUSES = {"active", "on_trial", "past_due", "manual"}
+# Stripe subscription statuses during which the paid plan applies ("past_due": while Stripe
+# retries a failed payment). A subscription cancelled at period end stays "active" until then.
+# "manual" is a plan set by hand (`python -m twapza.users`).
+ACTIVE_STATUSES = {"active", "trialing", "past_due", "manual"}
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,9 @@ def effective_plan_id(plan: str, status: str | None, ends_at: datetime | None, n
     if plan not in PLANS or plan == "free":
         return "free"
     if status in ACTIVE_STATUSES:
-        return plan
-    if status == "cancelled" and ends_at is not None and ends_at > now:
+        # Cancelled at period end and that moment has passed (in case the final webhook is late)
+        if ends_at is not None and ends_at <= now and status != "manual":
+            return "free"
         return plan
     return "free"
 

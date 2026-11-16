@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type Account, type BillingPeriod, type PlanId } from "../api/client";
-import { choosePlan, useAuth } from "../auth/AuthProvider";
+import { choosePlan, PAYING_STATUSES, useAuth } from "../auth/AuthProvider";
 import { useI18n } from "../i18n";
 import { PLANS, price } from "../marketing/plans";
 
@@ -11,6 +11,10 @@ const input = "w-full rounded-xl border border-line-strong bg-surface-2 px-4 py-
 const secondary = "rounded-xl border border-line-strong px-4 py-2 text-sm font-medium transition hover:bg-surface-2 disabled:opacity-60";
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/** "pro_yearly" etc. for the current subscription, to notice when it changes. */
+const subscriptionKey = (a: Account | null) =>
+  a?.subscription?.status ? `${a.subscription.plan}_${a.subscription.period}_${a.subscription.status}` : null;
+
 export function AccountPage() {
   const { t, lang } = useI18n();
   const { account, setAccount, refresh, logout } = useAuth();
@@ -18,15 +22,21 @@ export function AccountPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const upgraded = params.get("upgraded") === "1";
+  const startPlan = useRef(subscriptionKey(account));
+  const [waiting, setWaiting] = useState(upgraded);
 
-  // Back from the checkout: the plan switches once Lemon Squeezy's webhook arrives (seconds).
+  // Back from Stripe: the plan switches once Stripe's webhook arrives (seconds).
   useEffect(() => {
     if (!upgraded) return;
     let tries = 0;
     const timer = window.setInterval(async () => {
       tries += 1;
       const me = await refresh();
-      if ((me && me.plan.id !== "free") || tries >= 15) window.clearInterval(timer);
+      const now = subscriptionKey(me);
+      if ((me && me.plan.id !== "free" && now !== startPlan.current) || tries >= 15) {
+        window.clearInterval(timer);
+        setWaiting(false);
+      }
     }, 2000);
     return () => window.clearInterval(timer);
   }, [upgraded, refresh]);
@@ -64,7 +74,7 @@ export function AccountPage() {
       {upgraded && (
         <div role="status" className="flex items-start justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
           <span>
-            {account.plan.id === "free"
+            {waiting
               ? t("Thanks for your payment! Your plan is being activated, this takes a few seconds…")
               : t("Thanks! Your {plan} plan is active.", { plan: t(planName) })}
           </span>
@@ -101,7 +111,7 @@ export function AccountPage() {
         </div>
       </section>
 
-      <PlanPicker account={account} onChange={setAccount} />
+      <PlanPicker account={account} />
       <ChangePassword />
       <DeleteAccount onDeleted={() => { setAccount(null); navigate("/", { replace: true }); }} />
     </div>
@@ -115,9 +125,9 @@ function SubscriptionLine({ account, date }: { account: Account; date: (iso: str
   if (sub.status === "manual") return <p className="mt-1 text-sm text-muted">{t("Given to you by the Twapza team.")}</p>;
   if (sub.status === "past_due")
     return <p className="mt-1 text-sm text-amber-300">{t("Your last payment failed. Update your payment method to keep your plan.")}</p>;
-  if (sub.status === "cancelled" && sub.ends_at)
+  if (sub.ends_at && PAYING_STATUSES.includes(sub.status))
     return <p className="mt-1 text-sm text-muted">{t("Cancelled: your plan ends on {date}.", { date: date(sub.ends_at) })}</p>;
-  if (sub.renews_at && ["active", "on_trial"].includes(sub.status))
+  if (sub.renews_at && ["active", "trialing"].includes(sub.status))
     return <p className="mt-1 text-sm text-muted">{t("Renews on {date}.", { date: date(sub.renews_at) })}</p>;
   return null;
 }
@@ -151,20 +161,19 @@ function PortalButton() {
   );
 }
 
-function PlanPicker({ account, onChange }: { account: Account; onChange: (a: Account) => void }) {
+function PlanPicker({ account }: { account: Account }) {
   const { t, lang } = useI18n();
   const [period, setPeriod] = useState<BillingPeriod>(account.subscription?.period ?? "yearly");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const sub = account.subscription;
-  const paying = sub?.status && ["active", "on_trial", "past_due", "paused"].includes(sub.status) ? sub : null;
+  const paying = sub?.status && PAYING_STATUSES.includes(sub.status) ? sub : null;
 
   async function pick(plan: PlanId) {
     setBusy(plan);
     setError(null);
     try {
-      const updated = await choosePlan(account, plan, period);
-      if (updated) onChange(updated);
+      await choosePlan(account, plan, period); // goes to Stripe
     } catch (err) {
       setError(message(err));
     } finally {
@@ -218,7 +227,7 @@ function PlanPicker({ account, onChange }: { account: Account; onChange: (a: Acc
         })}
       </div>
       {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
-      <p className="mt-4 text-xs text-faint">{t("Payments are handled by Lemon Squeezy. Prices exclude VAT/sales tax, which is added at checkout where it applies.")}</p>
+      <p className="mt-4 text-xs text-faint">{t("Payments are handled securely by Stripe. Prices exclude VAT/sales tax, which is added at checkout where it applies.")}</p>
     </section>
   );
 }

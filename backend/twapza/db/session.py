@@ -17,12 +17,21 @@ log = logging.getLogger(__name__)
 # version to MIGRATIONS. If there is no migration path (e.g. a much older
 # database), the database and stored project files are reset: all data is
 # temporary (24h retention). Replace with Alembic before real deployments.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # Tables that hold data people expect us to keep (never dropped by the reset below).
 PERMANENT_TABLES = {"waitlistentry", "user", "authsession", "passwordreset", "usageevent"}
 
-MIGRATIONS: dict[int, list[str]] = {
+def _rename_column(table: str, old: str, new: str):
+    """A migration step that renames a column if the table has it (older databases may lack the table)."""
+    def step(conn) -> None:
+        columns = {row[1] for row in conn.execute(text(f'PRAGMA table_info("{table}")'))}
+        if old in columns and new not in columns:
+            conn.execute(text(f'ALTER TABLE "{table}" RENAME COLUMN {old} TO {new}'))
+    return step
+
+
+MIGRATIONS: dict[int, list] = {
     # version reached -> statements that upgrade from version - 1
     3: [
         "ALTER TABLE clip ADD COLUMN suggested_start FLOAT",
@@ -48,6 +57,9 @@ MIGRATIONS: dict[int, list[str]] = {
     8: [  # accounts (the new account tables are created by create_all)
         "ALTER TABLE project ADD COLUMN user_id VARCHAR",
         "CREATE INDEX IF NOT EXISTS ix_project_user_id ON project (user_id)",
+    ],
+    9: [  # payments moved from Lemon Squeezy to Stripe
+        _rename_column("user", "variant_id", "price_id"),
     ],
 }
 
@@ -118,7 +130,10 @@ def init_db() -> None:
                     for v in range(version + 1, SCHEMA_VERSION + 1):
                         log.info("migrating database schema to v%s", v)
                         for statement in MIGRATIONS[v]:
-                            conn.execute(text(statement))
+                            if callable(statement):
+                                statement(conn)
+                            else:
+                                conn.execute(text(statement))
             elif has_tables and version != SCHEMA_VERSION:
                 log.warning("database schema v%s != v%s: resetting temporary data", version, SCHEMA_VERSION)
                 from twapza.storage import get_storage

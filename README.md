@@ -100,25 +100,38 @@ everyone only sees their own projects. Plans and their limits (`backend/twapza/a
 A video's length counts towards the month when it has been processed (deleting it doesn't give the
 minutes back). Months start on the day you signed up or subscribed.
 
-**Payments** go through [Lemon Squeezy](https://www.lemonsqueezy.com/). They are the "merchant of
-record": they sell to your customers and handle VAT and sales tax worldwide, then pay you out. To
-switch it on:
+**Payments** go through [Stripe](https://stripe.com/) with
+[Managed Payments](https://stripe.com/managed-payments): Stripe is the merchant of record, so it
+sells to your customers and handles VAT/sales tax, fraud and disputes worldwide (customers see
+the purchase as sold through Link, Stripe's checkout). Managed Payments costs an extra fee on top
+of normal Stripe fees; check your Stripe dashboard for the current numbers. To switch it on:
 
-1. Create a Lemon Squeezy account and a store (start in **Test mode**: fake cards, no real money).
-2. Create two **subscription products**, *Creator* and *Pro*, each with two variants (prices):
-   monthly ($15 / $29) and yearly ($144 / $276). Copy each variant's ID.
-3. **Settings → API**: create an API key. **Settings → Stores**: note the store ID.
-4. **Settings → Webhooks**: add `https://<your domain>/api/billing/webhook`, choose a signing
-   secret, and tick the `subscription_*` events (created, updated, cancelled, resumed, expired,
-   paused, unpaused).
-5. Put the key, store ID, signing secret and the four variant IDs in `.env`
-   (`TWAPZA_LEMONSQUEEZY_*`, see `.env.example`), set `TWAPZA_PUBLIC_URL`, and restart.
+1. Create a Stripe account (to go live you'll need your business details, e.g. KvK). Stay in
+   **test mode** (sandbox) for now.
+2. Turn on **Managed Payments** in the Dashboard (search for "Managed Payments") and accept its
+   terms. It's offered in a limited set of countries; if it isn't available for your account, set
+   `TWAPZA_STRIPE_MANAGED_PAYMENTS=false`: Twapza then uses plain Stripe Billing and you are the
+   seller (turn on Stripe Tax and register for VAT yourself).
+3. **Developers → API keys**: copy the **secret key** (`sk_test_…`) into `.env` as
+   `TWAPZA_STRIPE_SECRET_KEY` (only in `.env` on the server; never in chat, email or git).
+4. Create the products, prices and portal settings in one go, and paste the printed lines into `.env`:
 
-Lemon Squeezy has to be able to reach the webhook URL, so paid plans only work once Twapza runs on a
-public address (on your own computer, use a tunnel such as `cloudflared` or `ngrok` to test). Plan
-changes and cancelling: the account page ("Manage subscription" opens Lemon Squeezy's customer
-portal). Change the website's prices in `frontend/src/marketing/plans.ts` and the real ones in
-Lemon Squeezy.
+   ```bash
+   docker compose exec twapza-api python -m twapza.stripe_setup
+   ```
+
+   (Creator $15/month or $144/year, Pro $29/month or $276/year, tax code "SaaS - personal use",
+   prices excluding tax. Change them in `twapza/stripe_setup.py` *and* `frontend/src/marketing/plans.ts`.)
+5. **Developers → Webhooks → Add endpoint**: `https://<your domain>/api/billing/webhook`, events
+   `checkout.session.completed` and `customer.subscription.created / updated / deleted / paused /
+   resumed`. Copy its **signing secret** (`whsec_…`) into `TWAPZA_STRIPE_WEBHOOK_SECRET`.
+6. Restart (`docker compose … up -d`). Test with card `4242 4242 4242 4242`, any future date, any CVC.
+
+On your own computer, the Stripe CLI can forward webhooks without a public address:
+`stripe listen --forward-to localhost:8080/api/billing/webhook` (use the `whsec_…` it prints).
+To go live, repeat steps 3–5 with live keys (`sk_live_…`); test and live mode have separate
+products, prices and webhooks. Plan changes, cancelling, payment methods and invoices: the account
+page ("Manage subscription" opens Stripe's customer portal).
 
 **Password-reset emails** need an SMTP service (`TWAPZA_SMTP_*`); without one the reset link is
 written to the API log (`docker compose logs twapza-api`).
@@ -151,13 +164,13 @@ redirects `twapza.io` and plain `http://` to it, and stops publishing the unencr
 
    ```bash
    git clone <this repository> twapza && cd twapza
-   cp .env.example .env   # fill in ANTHROPIC_API_KEY, SMTP, Lemon Squeezy; TWAPZA_DOMAIN=www.twapza.io
+   cp .env.example .env   # fill in ANTHROPIC_API_KEY, SMTP, Stripe; TWAPZA_DOMAIN=www.twapza.io
    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
    ```
 
    After a minute https://www.twapza.io works (Caddy needs the DNS records from step 2 to get its
    certificate; `docker compose logs twapza-caddy` shows what it's doing).
-5. **Lemon Squeezy webhook URL**: `https://www.twapza.io/api/billing/webhook`.
+5. **Stripe webhook URL**: `https://www.twapza.io/api/billing/webhook` (see "Accounts and payments").
 6. **Email**: in your email service (Resend, Postmark, Brevo, ...) add twapza.io as a sending domain
    and create the DNS records it asks for (SPF/DKIM), so reset emails from `no-reply@twapza.io`
    don't land in spam.

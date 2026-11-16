@@ -353,6 +353,9 @@ class FakeStripe:
     def get_subscription(self, subscription_id):
         return self.subs[subscription_id]
 
+    def find_subscriptions(self, user_id):
+        return [s for s in reversed(list(self.subs.values())) if (s.get("metadata") or {}).get("user_id") == user_id]
+
     def change_plan_url(self, **kwargs):
         self.changes.append(kwargs)
         return "https://billing.stripe.com/p/session/confirm"
@@ -635,3 +638,49 @@ def test_stripe_errors_explain_the_reason():
         stripe.change_plan_url(subscription_id="sub_1", customer_id="cus_1", price_id="price_cy", return_url="u")
     with pytest.raises(BillingError, match="No such price"):
         stripe.portal(customer_id="cus_1", return_url="u")
+
+
+def test_checkout_finds_a_payment_the_webhook_missed(free_client, fake_billing):
+    """Paid, but the webhook never arrived: buying again is refused and the account catches up."""
+    c = free_client
+    uid = user("free@example.com").id
+    fake_billing.subs["sub_lost"] = subscription("price_cy", sub_id="sub_lost", metadata={"user_id": uid})
+    fake_billing.subs["sub_old"] = subscription("price_pm", sub_id="sub_old", status="canceled", metadata={"user_id": uid})
+    r = c.post("/api/billing/checkout", json={"plan": "creator", "period": "yearly"})
+    assert r.status_code == 409 and fake_billing.checkouts == []
+    me = c.get("/api/auth/me").json()
+    assert me["plan"]["id"] == "creator" and me["subscription"]["period"] == "yearly"
+
+
+def test_checkout_goes_ahead_when_only_ended_subscriptions_exist(free_client, fake_billing):
+    uid = user("free@example.com").id
+    fake_billing.subs["sub_old"] = subscription("price_cm", sub_id="sub_old", status="canceled", metadata={"user_id": uid})
+    assert free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "monthly"}).status_code == 200
+
+
+def test_subscription_search_request():
+    import httpx
+
+    from twapza.accounts.billing import Stripe
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": [{"id": "a", "created": 1}, {"id": "b", "created": 2}]})
+
+    stripe = Stripe("sk_test_1", api_version="v", transport=httpx.MockTransport(handler))
+    assert [s["id"] for s in stripe.find_subscriptions("u1'x")] == ["b", "a"]
+    assert seen[0].method == "GET" and seen[0].url.path == "/v1/subscriptions/search"
+    assert seen[0].url.params["query"] == "metadata['user_id']:'u1x'"
+
+
+def test_stripe_ids_ignore_text_pasted_onto_the_same_line(monkeypatch):
+    monkeypatch.setenv("TWAPZA_STRIPE_PORTAL_CONFIGURATION", "bpc_123# low | medium | high (more tokens)")
+    monkeypatch.setenv("TWAPZA_STRIPE_PRICE_PRO_YEARLY", "  price_py  ")
+    monkeypatch.setenv("TWAPZA_STRIPE_PRICE_PRO_MONTHLY", "")
+    get_settings.cache_clear()
+    s = get_settings()
+    assert s.stripe_portal_configuration == "bpc_123"
+    assert s.prices == {("pro", "yearly"): "price_py"}
+    get_settings.cache_clear()

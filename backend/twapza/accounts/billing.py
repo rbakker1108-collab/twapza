@@ -184,6 +184,16 @@ class Stripe:
             raise BillingError("The payment provider didn't return a checkout page.")
         return url
 
+    def find_subscriptions(self, user_id: str) -> list[dict]:
+        """Subscriptions Stripe has for this Twapza account (newest first), found by metadata.
+
+        Uses Stripe's search, which can lag new data by up to about a minute.
+        """
+        safe = "".join(ch for ch in user_id if ch.isalnum())
+        data = self._request("GET", "/subscriptions/search",
+                             {"query": f"metadata['user_id']:'{safe}'", "limit": 20}).get("data") or []
+        return sorted(data, key=lambda s: s.get("created") or 0, reverse=True)
+
     def get_subscription(self, subscription_id: str) -> dict:
         return self._request("GET", f"/subscriptions/{subscription_id}")
 

@@ -49,8 +49,12 @@ def _price(settings: Settings, plan: str, period: str) -> str:
     return price
 
 
+# Subscription statuses of someone who is (still) paying through Stripe
+RUNNING = (ACTIVE_STATUSES - {"manual"}) | {"paused"}
+
+
 def _has_subscription(user: User) -> bool:
-    return bool(user.subscription_id) and user.subscription_status in (ACTIVE_STATUSES - {"manual"}) | {"paused"}
+    return bool(user.subscription_id) and user.subscription_status in RUNNING
 
 
 def _account_url(settings: Settings, query: str = "") -> str:
@@ -58,11 +62,12 @@ def _account_url(settings: Settings, query: str = "") -> str:
 
 
 @router.post("/checkout", response_model=UrlResponse)
-def checkout(body: CheckoutRequest, user: User = Depends(current_user), settings: Settings = Depends(get_settings),
+def checkout(body: CheckoutRequest, user: User = Depends(current_user), session: Session = Depends(get_session),
+             settings: Settings = Depends(get_settings),
              billing: Stripe | None = Depends(billing_client)) -> UrlResponse:
     """A Stripe Checkout page for the plan (taxes are added there)."""
     billing = _require(billing)
-    if _has_subscription(user):
+    if _has_subscription(user) or _found_running_subscription(session, user, billing, settings):
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "You already have a subscription. Change your plan on your account page.")
     price = _price(settings, body.plan, body.period)
@@ -73,6 +78,21 @@ def checkout(body: CheckoutRequest, user: User = Depends(current_user), settings
     except BillingError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
     return UrlResponse(url=url)
+
+
+def _found_running_subscription(session: Session, user: User, billing: Stripe, settings: Settings) -> bool:
+    """Ask Stripe whether this account already pays (e.g. a webhook was lost or is still on its way),
+    so nobody pays twice. If so, the account is updated from it."""
+    try:
+        found = billing.find_subscriptions(user.id)
+    except BillingError:
+        return False  # search unavailable: don't block buying
+    for subscription in found:
+        if subscription.get("status") in RUNNING and apply_subscription(user, subscription, settings):
+            session.add(user)
+            session.commit()
+            return True
+    return False
 
 
 @router.post("/change-plan", response_model=UrlResponse)

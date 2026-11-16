@@ -7,7 +7,7 @@ Twapza-specific settings use the ``TWAPZA_`` prefix. A few well-known variables
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ALLOWED_EXTENSIONS = ("mp4", "mov", "mkv")
@@ -105,6 +105,17 @@ class Settings(BaseSettings):
     stripe_price_pro_yearly: str | None = None
     # Customer portal configuration (bpc_...) that allows switching between those prices
     stripe_portal_configuration: str | None = None
+
+    @field_validator("stripe_price_creator_monthly", "stripe_price_creator_yearly", "stripe_price_pro_monthly",
+                     "stripe_price_pro_yearly", "stripe_portal_configuration", mode="before")
+    @classmethod
+    def _clean_stripe_id(cls, value: object) -> object:
+        """Stripe IDs never contain spaces or '#': drop anything glued on, like a comment pasted onto
+        the same line in .env (``bpc_123# low | medium …``)."""
+        if isinstance(value, str):
+            value = value.split("#", 1)[0].strip()
+            return value.split()[0] if value else None
+        return value
 
     @property
     def billing_enabled(self) -> bool:

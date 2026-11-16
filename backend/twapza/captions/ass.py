@@ -171,6 +171,9 @@ def box_size(box: TextBox, width: int) -> int:
     return max(8, round(box.size * width / EM_PER_ASS_SIZE.get(box.font, 0.643)))
 
 
+WATERMARK_TEXT = "Made with Twapza"  # on Free-plan downloads
+
+
 def progress_events(length: float, width: int, height: int) -> list[str]:
     """A thin bar along the top that fills up over the clip (drawn, so it follows any edit)."""
     if length <= 0.3:
@@ -198,6 +201,7 @@ def build_ass(
     hook_full: bool = False,
     boxes: Sequence[TextBox] = (),
     progress_color: str | None = None,
+    watermark: bool = False,
 ) -> str | None:
     """ASS document for one clip at ``width``×``height``, or None if there is nothing to show.
 
@@ -212,7 +216,7 @@ def build_ass(
     hook_ev = hook_event(hook, length, full=hook_full) if hook else None
     placed = [(i, box, span) for i, box in enumerate(boxes) if box_text(box.text)
               for span in map_span(box.start, box.end, segments or [])]
-    if not events and hook_ev is None and not placed and not progress_color:
+    if not events and hook_ev is None and not placed and not progress_color and not watermark:
         return None
 
     short = min(width, height)
@@ -269,6 +273,15 @@ def build_ass(
         styles.append(f"Style: Progress,Arial,20,{color},{color},&H00000000,&H00000000,0,0,0,0,"
                       "100,100,0,0,1,0,0,7,0,0,0,1")
 
+    if watermark:
+        family, _ = font_for("montserrat", WATERMARK_TEXT)
+        size = round(short * 0.034)
+        margin = round(short * 0.035)
+        # Top right, semi-transparent (alpha 0x60), clear of the progress bar and the hook text.
+        styles.append(
+            f"Style: Watermark,{family},{size},&H60FFFFFF,&H60FFFFFF,&H90000000,&H00000000,-1,0,0,0,"
+            f"100,100,0,0,1,{max(1, size // 14)},0,9,{margin},{margin},{round(height * 0.035)},1")
+
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -293,4 +306,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                      f"{{\\an5\\pos({x},{y})}}{box_text(box.text)}")
     if progress_color:
         lines += progress_events(length, width, height)
+    if watermark and length > 0:
+        lines.append(f"Dialogue: 5,0:00:00.00,{ass_time(length)},Watermark,,0,0,0,,{WATERMARK_TEXT}")
     return header + "\n".join(lines) + "\n"

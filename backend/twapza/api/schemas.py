@@ -238,3 +238,81 @@ class ZipExportRequest(BaseModel):
     source: ClipSource = ClipSource.SIMPLE
     clip_ids: list[str] | None = None  # None = every clip of `source`
     settings: ExportSettings = ExportSettings()
+
+
+# --- Accounts -------------------------------------------------------------------------
+
+Lang = Literal["en", "nl", "es", "de", "fr", "ar"]
+
+
+class SignupRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(max_length=1000)
+    lang: Lang = "en"
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=1000)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(max_length=254)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(max_length=200)
+    password: str = Field(max_length=1000)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(max_length=1000)
+    new_password: str = Field(max_length=1000)
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(max_length=1000)
+
+
+class PlanLimits(BaseModel):
+    id: str
+    minutes: int
+    max_video_minutes: int
+    watermark: bool
+    editing: bool
+    zip: bool
+    priority: bool
+
+
+class UsageRead(BaseModel):
+    used_minutes: float
+    limit_minutes: float
+    resets_at: datetime
+
+
+class SubscriptionRead(BaseModel):
+    plan: str  # what they pay for (the limits in AccountRead.plan may be "free" if it lapsed)
+    period: str | None
+    status: str | None
+    renews_at: datetime | None
+    ends_at: datetime | None
+
+
+class AccountRead(BaseModel):
+    id: str
+    email: str
+    lang: str
+    created_at: datetime
+    plan: PlanLimits
+    usage: UsageRead
+    subscription: SubscriptionRead | None
+    billing_enabled: bool
+
+
+class CheckoutRequest(BaseModel):
+    plan: Literal["creator", "pro"]
+    period: Literal["monthly", "yearly"] = "yearly"
+
+
+class UrlResponse(BaseModel):
+    url: str

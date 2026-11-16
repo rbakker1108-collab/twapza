@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from twapza.api.routes import clips, imports, jobs, projects, uploads, waitlist
+from twapza.api.routes import auth, billing, clips, imports, jobs, projects, uploads, waitlist
 from twapza.captions.style import FONTS_DIR
 from twapza.config import ALLOWED_EXTENSIONS, get_settings
 from twapza.db.session import init_db
@@ -21,6 +21,8 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Twapza API", version="0.1.0", lifespan=lifespan)
+    app.include_router(auth.router)
+    app.include_router(billing.router)
     app.include_router(uploads.router)
     app.include_router(imports.router)
     app.include_router(waitlist.router)
@@ -48,6 +50,8 @@ def create_app() -> FastAPI:
             "ai_enabled": bool(s.anthropic_api_key and s.anthropic_api_key.get_secret_value()),
             "claude_model": s.claude_model,
             "youtube_enabled": s.youtube_enabled,
+            "billing_enabled": s.billing_enabled,
+            "billing_plans": sorted(f"{plan}_{period}" for plan, period in s.variants),
         }
 
     return app

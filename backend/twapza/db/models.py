@@ -52,6 +52,9 @@ class JobStatus(StrEnum):
 
 class Project(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
+    # The account that owns the project (only they can see it). None for projects made before
+    # accounts existed; nobody can open those and they expire as usual.
+    user_id: str | None = Field(default=None, index=True)
     filename: str
     ext: str
     size_bytes: int
@@ -192,3 +195,51 @@ class WaitlistEntry(SQLModel, table=True):
     email: str = Field(primary_key=True, max_length=254)  # stored lower-cased
     lang: str = "en"
     created_at: datetime = Field(default_factory=utcnow)
+
+
+# --- Accounts (permanent data: kept by the schema reset and the retention cleanup) ---------
+
+class User(SQLModel, table=True):
+    id: str = Field(default_factory=new_id, primary_key=True)
+    email: str = Field(index=True, unique=True, max_length=254)  # stored lower-cased
+    password_hash: str
+    lang: str = "en"
+    created_at: datetime = Field(default_factory=utcnow)
+    # Subscription, kept in sync by the Lemon Squeezy webhook (see accounts/billing.py).
+    plan: str = "free"  # free | creator | pro (what they pay for; see accounts.plans.effective_plan)
+    period: str | None = None  # monthly | yearly
+    # Lemon Squeezy status (active, on_trial, past_due, paused, unpaid, cancelled, expired),
+    # or "manual" for a plan set with `python -m twapza.users set-plan`.
+    subscription_status: str | None = None
+    subscription_id: str | None = Field(default=None, index=True)
+    customer_id: str | None = None
+    variant_id: str | None = None
+    renews_at: datetime | None = None
+    ends_at: datetime | None = None
+    # Monthly minutes reset on this date's day of the month (sign-up, or when they subscribed).
+    period_anchor: datetime | None = None
+    subscription_updated_at: datetime | None = None  # ignore webhooks older than this
+
+
+class AuthSession(SQLModel, table=True):
+    """A login. The browser holds the token in an HttpOnly cookie; only its hash is stored."""
+    token_hash: str = Field(primary_key=True)
+    user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime
+
+
+class PasswordReset(SQLModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: str = Field(index=True)
+    expires_at: datetime
+    used: bool = False
+
+
+class UsageEvent(SQLModel, table=True):
+    """Video minutes used: one row per processed video (deleting the project doesn't refund)."""
+    id: str = Field(default_factory=new_id, primary_key=True)
+    user_id: str = Field(index=True)
+    project_id: str | None = None
+    seconds: float
+    created_at: datetime = Field(default_factory=utcnow, index=True)

@@ -13,6 +13,8 @@ transcript + the Claude API, and simple fixed-length clipping snapped to sentenc
   `api/routes/imports.py`; the confirmation time is stored as `Project.rights_confirmed_at`).
 - **Originals are never modified.** Every derived file (proxy, audio, clips) is a new object.
 - Everything a project stores is deleted after `TWAPZA_RETENTION_HOURS` (default 24).
+- **Every project belongs to an account** (`Project.user_id`); routes only return the logged-in
+  user's own projects/clips/jobs (someone else's is a 404, never a 403).
 - Secrets (e.g. `ANTHROPIC_API_KEY`) come from the environment / `.env`. Never hardcode them.
 
 ## Architecture
@@ -156,25 +158,62 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   regenerated lazily when missing.
 - **Schema changes**: bump `SCHEMA_VERSION` in `db/session.py` and add the upgrade SQL to
   `MIGRATIONS` (e.g. `ALTER TABLE ... ADD COLUMN`). Without a migration path the DB and stored
-  project files are reset (all data is temporary). Use Alembic once data must survive.
+  project files are reset (temporary tables only). **Account tables are permanent and never reset**, so any
+  change to them needs a migration. Move to Alembic (and Postgres) before real traffic.
 
 - **Website** (`frontend/src/marketing/`): `MarketingLayout` serves `/`, `/features`, `/solutions`,
-  `/pricing`, `/resources[/:slug]`; the app (`AppLayout`) lives at `/app` and `/projects/:id`. Copy is in
-  `content.ts` (steps, features, audiences, FAQ, guides), prices in `plans.ts` (`price()` formats USD per
-  locale). Don't claim features that don't exist (plan limits/watermark/priority are not enforced yet;
-  they need accounts + billing). The early-access form posts to `POST /api/waitlist`
-  (`WaitlistEntry`, idempotent, lower-cased email). `WaitlistEntry` is **permanent** data:
-  `db/session.PERMANENT_TABLES` are kept when a schema reset drops the temporary tables, and the
-  retention cleanup never touches them. Export/remove with `python -m twapza.waitlist [--remove EMAIL]`.
+  `/pricing`, `/resources[/:slug]` and the auth pages (`/login`, `/signup[?plan=&period=]`,
+  `/forgot-password`, `/reset-password?token=`; `pages/AuthPages.tsx`); the app (`AppLayout`, wrapped in
+  `RequireAuth`) lives at `/app`, `/projects/:id` and `/account`. Copy is in `content.ts` (steps, features,
+  audiences, FAQ, guides), display prices/features in `plans.ts` (keep in sync with `accounts/plans.py`).
+  Don't claim features that don't exist. The old early-access list (`POST /api/waitlist`, `WaitlistEntry`)
+  is no longer on the site; its data is kept (`python -m twapza.waitlist [--remove EMAIL]`).
+- **Accounts** (`accounts/`, `api/routes/auth.py`): email + password (`passwords.py`: stdlib scrypt, 8-128
+  chars). Login = server-side session: random token in an HttpOnly SameSite=Lax cookie `twapza_session`
+  (Secure when `TWAPZA_PUBLIC_URL` is https), only its SHA-256 stored (`AuthSession`). `api/deps.current_user`
+  (401) / `optional_user`. Password reset: single-use 1 h token (`PasswordReset`), emailed via SMTP
+  (`mail.py`; logged when `TWAPZA_SMTP_HOST` is unset), logs out other sessions; forgot-password answers the
+  same whether or not the email exists. Rate limits in Redis (`ratelimit.hit`, fails open; client IP = last
+  X-Forwarded-For entry from nginx). Account tables (`User`, `AuthSession`, `PasswordReset`, `UsageEvent`,
+  `WaitlistEntry`) are **permanent** (`db/session.PERMANENT_TABLES`: kept by a schema reset, never touched by
+  the retention cleanup; `cleanup_logins` drops expired sessions/reset tokens). Delete account
+  (`accounts/users.delete_user`) cancels the subscription, deletes projects + files. Admin CLI:
+  `python -m twapza.users list | set-plan EMAIL PLAN | delete EMAIL` (`set-plan` = status `manual`).
+- **Plans + limits** (`accounts/plans.py`, pure; `usage.py`): Free 60 min/month, videos ≤ 60 min, watermark;
+  Creator 300 min, ≤ 120 min, `editing`; Pro 1200 min, ≤ 180 min, `zip`, `priority`. `effective_plan_id`
+  (paid statuses active/on_trial/past_due/manual, cancelled until `ends_at`), months run from
+  `User.period_anchor` (`period_bounds`). Minutes are charged once per project at the end of ingest
+  (`usage.record_usage` → `UsageEvent`); ingest/import fail with a readable message when the video is too long
+  for the plan or doesn't fit the minutes left (`usage.video_problem`; import checks before downloading);
+  `require_minutes_left` refuses new uploads/imports at 0 minutes (402). `editing` gates (402 `NEEDS_CREATOR`):
+  overlays/corrections PUT, AI description POST, and exports with hook_text/cold_open/cut_pauses/cut_fillers.
+  `clips.plan_settings` forces `ExportSettings.watermark` (Free; ASS `Watermark` event, "Made with Twapza",
+  top right) and `texts` (overlays burned in only with `editing`) whatever the browser sends; both are part of
+  the export key. ZIP needs Pro. `queue.with_priority` sends Pro jobs to `<queue>-priority`, which workers
+  drain first. Frontend: `auth/AuthProvider` (`useAuth`, `usePlan`: everything allowed when no account is
+  loaded, e.g. component tests; `choosePlan`), `auth/UpgradeNote`, locked boosts in `ExportOptions`, locked
+  editor tabs, `DownloadAllButton`/`DescriptionPanel` upgrade notes.
+- **Billing** (`accounts/billing.py`, `api/routes/billing.py`): Lemon Squeezy (merchant of record: they
+  handle VAT/sales tax). `POST /api/billing/checkout {plan, period}` → hosted checkout URL (custom data
+  `user_id`, redirect `/account?upgraded=1`, which polls `/me` until the webhook lands); `POST
+  /api/billing/change-plan` PATCHes the subscription's variant; `GET /api/billing/portal` fetches a fresh signed
+  customer-portal URL. `POST /api/billing/webhook`: verifies `X-Signature` (hex HMAC-SHA256 of the raw body),
+  handles `subscription_*` events via `apply_subscription` (variant → plan/period from the four
+  `TWAPZA_LEMONSQUEEZY_VARIANT_*` settings, ignores events older than `subscription_updated_at`, user found by
+  `meta.custom_data.user_id` or `subscription_id`). Without `TWAPZA_LEMONSQUEEZY_API_KEY`/`STORE_ID` billing
+  endpoints answer 503 and the UI says paid plans can't be bought yet. The route dependency `billing_client` is
+  replaced by a fake in tests; `test_accounts.py` also checks the real client's request shape with an httpx
+  mock transport.
 
 ## Layout
 
 ```
 backend/twapza/
   config.py            Settings (pydantic-settings, TWAPZA_* env vars)
-  api/app.py           FastAPI app factory; api/routes/{uploads,imports,projects,jobs,clips}.py
+  api/app.py           FastAPI app factory; api/routes/{auth,billing,uploads,imports,projects,jobs,clips,waitlist}.py
+  api/deps.py          current_user / optional_user (session cookie)
   api/schemas.py       Response/request models (keep DB models out of responses)
-  db/models.py         SQLModel tables: Project, UploadPart, Job, Clip
+  db/models.py         SQLModel tables: Project, UploadPart, Job, Clip; User, AuthSession, PasswordReset, UsageEvent, WaitlistEntry
   db/session.py        Engine (SQLite WAL), init_db(), get_session dependency
   storage/             Storage protocol + LocalStorage
   queue/__init__.py    RQ queue, enqueue_job(), ProgressReporter, run_tracked()
@@ -193,11 +232,15 @@ backend/twapza/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
+  accounts/            passwords.py, plans.py (pure limits), usage.py, users.py, billing.py (Lemon Squeezy), mail.py, ratelimit.py
+  users.py             account admin CLI (list, set-plan, delete)
   waitlist.py          early-access list CLI (CSV export, --remove)
   cleanup.py           expiry + orphan sweep + job watchdog loop; `python -m twapza.cleanup [--once]`
 backend/tests/         pytest (unit + ffmpeg integration on synthetic media)
 frontend/src/
   api/client.ts        typed API client
+  auth/                AuthProvider (useAuth, usePlan, choosePlan), RequireAuth, UpgradeNote
+  pages/AuthPages.tsx, AccountPage.tsx  login/sign-up/reset pages; plan, minutes, upgrade, password, delete
   lib/upload.ts        chunked upload with retry; resumes across reloads (localStorage key per file)
   lib/jobs.ts          watchJob() over SSE, runAndDownload() for export jobs
   hooks/useJob.ts      SSE job subscription
@@ -253,7 +296,7 @@ With Docker (recommended):
 
 ```bash
 cp .env.example .env        # add ANTHROPIC_API_KEY when you reach AI highlights
-docker compose up --build   # UI: http://localhost:8080 · API docs: http://localhost:8000/docs
+docker compose up --build   # UI: http://localhost:8080 (sign up at /signup) · API docs: http://localhost:8000/docs
 ```
 
 One worker processes jobs one at a time. For parallel exports/transcriptions:
@@ -309,7 +352,10 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 
 11. ✅ Website: landing page, Features, Solutions, Pricing, Resources (guides), early-access waitlist;
     app moved to `/app`.
+12. ✅ Accounts (email + password, sessions, reset, delete) and paid plans via Lemon Squeezy: monthly
+    minutes, video length, watermark, Creator/Pro features, priority queue, account page.
 
-Possible next steps: accounts + billing (enforce plans, watermark on Free), face-tracked vertical crop (AI reframe), logo/watermark and image stickers,
-keyword-highlighted captions, background music (own track, ducked under speech), 1:1 / 4:5 formats,
-hosted transcription backend, S3 storage backend, auth for multi-user hosting.
+Possible next steps: email verification, Google login, terms + privacy pages, face-tracked vertical crop
+(AI reframe), own logo/watermark and image stickers, keyword-highlighted captions, background music (own
+track, ducked under speech), 1:1 / 4:5 formats, hosted transcription backend, S3 storage backend,
+Postgres + Alembic (accounts are permanent data now).

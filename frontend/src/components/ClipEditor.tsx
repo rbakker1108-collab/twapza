@@ -4,6 +4,8 @@ import {
   api, type CaptionFont, type Clip, type ClipWord, type ExportSettings, type Job, type OverlayStyle, type Project,
   type TextOverlay,
 } from "../api/client";
+import { usePlan } from "../auth/AuthProvider";
+import { UpgradeNote } from "../auth/UpgradeNote";
 import { msg, useT } from "../i18n";
 import { captionAt, groupWords, type TimedWord } from "../lib/captions";
 import { formatDuration } from "../lib/format";
@@ -54,6 +56,7 @@ export const isActive = (o: TextOverlay, t: number) => t >= o.start && (o.end ==
  */
 export function ClipEditor({ clip: initialClip, project, settings: initialSettings, onSettingsChange, onClose, onSaved }: Props) {
   const t = useT();
+  const plan = usePlan();
   const [clip, setClip] = useState(initialClip);
   const [settings, setSettings] = useState(initialSettings);
   const changeSettings = (next: ExportSettings) => {
@@ -429,7 +432,16 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
               ))}
             </div>
 
-            {tab === "text" ? (
+            {!plan.editing && tab !== "format" ? (
+              <div className="space-y-3 rounded-lg border border-line p-4 text-sm" data-testid="locked-tab">
+                <p className="text-ink-soft">
+                  {tab === "text"
+                    ? t("Add a hook title and your own texts to the video.")
+                    : t("Fix words the transcription got wrong.")}
+                </p>
+                <UpgradeNote plan="creator" />
+              </div>
+            ) : tab === "text" ? (
               <div className="space-y-4">
                 <div className="space-y-2 rounded-lg border border-line p-3 text-sm" data-testid="hook-section">
                   <label className="flex items-center gap-2 font-medium">

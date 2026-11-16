@@ -6,6 +6,9 @@ from fastapi.responses import Response
 from rq import Queue
 from sqlmodel import Session, select
 
+from twapza.accounts.plans import NEEDS_CREATOR, NEEDS_PRO
+from twapza.accounts.usage import plan_of
+from twapza.api.deps import current_user
 from twapza.api.routes.projects import get_project_or_404, serve_object
 from twapza.api.schemas import (
     AiClipsRequest, ClipDescription, ClipRead, ClipWord, CorrectionsRequest, ExportRequest, JobRead,
@@ -18,10 +21,10 @@ from twapza.clipping.descriptions import (
 )
 from twapza.clipping.llm import HighlightError
 from twapza.config import Settings, get_settings
-from twapza.db.models import Clip, ClipSource, JobType, Project, ProjectStatus, new_id
+from twapza.db.models import Clip, ClipSource, JobType, Project, ProjectStatus, User, new_id
 from twapza.db.session import get_session
-from twapza.exports import export_filename, export_key, zip_filename
-from twapza.queue import completed_job, enqueue_job, get_queue
+from twapza.exports import ExportSettings, export_filename, export_key, zip_filename
+from twapza.queue import completed_job, enqueue_job, get_queue, with_priority
 from twapza.storage import Storage, get_storage
 from twapza.clipping.timeline import is_filler
 from twapza.workers.tasks import (
@@ -34,18 +37,33 @@ MIN_TRIMMED_SECONDS = 3.0
 router = APIRouter(prefix="/api", tags=["clips"])
 
 
-def _ready_project(session: Session, project_id: str) -> Project:
-    project = get_project_or_404(session, project_id)
+def _ready_project(session: Session, project_id: str, user: User) -> Project:
+    project = get_project_or_404(session, project_id, user)
     if project.status != ProjectStatus.READY:
         raise HTTPException(status.HTTP_409_CONFLICT, "The video has not finished processing yet.")
     return project
 
 
-def _clip_or_404(session: Session, clip_id: str) -> Clip:
+def _clip_or_404(session: Session, clip_id: str, user: User) -> Clip:
     clip = session.get(Clip, clip_id)
-    if clip is None:
+    project = session.get(Project, clip.project_id) if clip else None
+    if clip is None or project is None or project.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Clip not found.")
     return clip
+
+
+def _require_editing(user: User) -> None:
+    if not plan_of(user).editing:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, NEEDS_CREATOR)
+
+
+def plan_settings(user: User, settings: ExportSettings) -> ExportSettings:
+    """Apply the plan to export settings: watermark on Free; editing extras need Creator."""
+    plan = plan_of(user)
+    if not plan.editing and (settings.hook_text or settings.cold_open or settings.cut_pauses
+                             or settings.cut_fillers):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, NEEDS_CREATOR)
+    return settings.model_copy(update={"watermark": plan.watermark, "texts": plan.editing})
 
 
 @router.post("/projects/{project_id}/simple-clips", response_model=JobRead,
@@ -55,9 +73,11 @@ def create_simple_clips(
     body: SimpleClipsRequest,
     session: Session = Depends(get_session),
     queue: Queue = Depends(get_queue),
+    user: User = Depends(current_user),
 ) -> JobRead:
-    _ready_project(session, project_id)
-    job = enqueue_job(session, queue, project_id=project_id, job_type=JobType.SIMPLE_CLIPS,
+    _ready_project(session, project_id, user)
+    job = enqueue_job(session, with_priority(queue, plan_of(user).priority), project_id=project_id,
+                      job_type=JobType.SIMPLE_CLIPS,
                       func=generate_simple_clips, target_seconds=body.target_seconds)
     return JobRead.of(job)
 
@@ -70,13 +90,15 @@ def create_ai_clips(
     session: Session = Depends(get_session),
     queue: Queue = Depends(get_queue),
     settings: Settings = Depends(get_settings),
+    user: User = Depends(current_user),
 ) -> JobRead:
-    _ready_project(session, project_id)
+    _ready_project(session, project_id, user)
     if not settings.anthropic_api_key or not settings.anthropic_api_key.get_secret_value():
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "AI highlights need a Claude API key. Add ANTHROPIC_API_KEY to your "
                             ".env file and restart Twapza.")
-    job = enqueue_job(session, queue, project_id=project_id, job_type=JobType.AI_CLIPS,
+    job = enqueue_job(session, with_priority(queue, plan_of(user).priority), project_id=project_id,
+                      job_type=JobType.AI_CLIPS,
                       func=generate_ai_clips, short=bool(body and body.short),
                       focus=(body.focus or "").strip() or None if body else None)
     return JobRead.of(job)
@@ -89,10 +111,11 @@ async def trim_clip(
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
+    user: User = Depends(current_user),
 ) -> ClipRead:
     """Change a clip's start/end (the trim slider). Exports of the new range render fresh."""
-    clip = _clip_or_404(session, clip_id)
-    project = _ready_project(session, clip.project_id)
+    clip = _clip_or_404(session, clip_id, user)
+    project = _ready_project(session, clip.project_id, user)
     duration = project.duration or 0
     start, end = round(body.start, 3), round(min(body.end, duration), 3)
     if start >= end:
@@ -128,8 +151,9 @@ def list_clips(
     project_id: str,
     source: ClipSource | None = None,
     session: Session = Depends(get_session),
+    user: User = Depends(current_user),
 ) -> list[ClipRead]:
-    get_project_or_404(session, project_id)
+    get_project_or_404(session, project_id, user)
     query = select(Clip).where(Clip.project_id == project_id)
     if source:
         query = query.where(Clip.source == source)
@@ -143,24 +167,27 @@ def clip_thumbnail(
     clip_id: str,
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
+    user: User = Depends(current_user),
 ) -> Response:
-    clip = _clip_or_404(session, clip_id)
+    clip = _clip_or_404(session, clip_id, user)
     if not storage.exists(clip.thumbnail_key):  # e.g. right after a trim, or an older clip
-        project = get_project_or_404(session, clip.project_id)
+        project = get_project_or_404(session, clip.project_id, user)
         _render_thumbnail(storage, project, clip)
     return serve_object(storage, clip.thumbnail_key, "image/jpeg")
 
 
 @router.get("/clips/{clip_id}/subtitles.srt")
 def clip_subtitles(clip_id: str, cut_pauses: bool = False, cold_open: bool = False,
-                   cut_fillers: bool = False, session: Session = Depends(get_session)) -> Response:
+                   cut_fillers: bool = False, session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> Response:
     """The clip's speech as an .srt subtitle file (times relative to the clip).
 
     Pass the same ``cut_pauses`` / ``cold_open`` / ``cut_fillers`` options as the download so the
     timing matches.
     """
-    clip = _clip_or_404(session, clip_id)
-    project = _ready_project(session, clip.project_id)
+    clip = _clip_or_404(session, clip_id, user)
+    project = _ready_project(session, clip.project_id, user)
     transcript = load_transcript(project)
     srt = None
     if transcript:
@@ -177,9 +204,12 @@ def clip_subtitles(clip_id: str, cut_pauses: bool = False, cold_open: bool = Fal
 
 @router.put("/clips/{clip_id}/overlays", response_model=ClipRead)
 def set_clip_overlays(clip_id: str, body: OverlaysRequest,
-                      session: Session = Depends(get_session)) -> ClipRead:
+                      session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> ClipRead:
     """Save the texts placed on the clip in the editor (burned in when downloading)."""
-    clip = _clip_or_404(session, clip_id)
+    clip = _clip_or_404(session, clip_id, user)
+    _require_editing(user)
     clip.overlays = json.dumps([o.model_dump() for o in body.overlays], ensure_ascii=False)
     session.add(clip)
     session.commit()
@@ -188,10 +218,10 @@ def set_clip_overlays(clip_id: str, body: OverlaysRequest,
 
 
 @router.get("/clips/{clip_id}/words", response_model=list[ClipWord])
-def clip_words_for_editing(clip_id: str, session: Session = Depends(get_session)) -> list[ClipWord]:
+def clip_words_for_editing(clip_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)) -> list[ClipWord]:
     """The clip's caption words, for fixing typos in the clip editor."""
-    clip = _clip_or_404(session, clip_id)
-    project = _ready_project(session, clip.project_id)
+    clip = _clip_or_404(session, clip_id, user)
+    project = _ready_project(session, clip.project_id, user)
     raw = load_transcript(project, corrected=False)
     if raw is None:
         return []
@@ -212,9 +242,11 @@ def save_corrections(
     body: CorrectionsRequest,
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
+    user: User = Depends(current_user),
 ) -> list[ClipRead]:
     """Fix caption words (for every clip of the project). A fix equal to the original removes it."""
-    project = _ready_project(session, project_id)
+    project = _ready_project(session, project_id, user)
+    _require_editing(user)
     raw = load_transcript(project, corrected=False)
     if raw is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "The video has no transcript yet.")
@@ -244,9 +276,9 @@ def save_corrections(
 
 
 @router.put("/clips/{clip_id}/title", response_model=ClipRead)
-def set_clip_title(clip_id: str, body: TitleRequest, session: Session = Depends(get_session)) -> ClipRead:
+def set_clip_title(clip_id: str, body: TitleRequest, session: Session = Depends(get_session), user: User = Depends(current_user)) -> ClipRead:
     """Change the clip's title (also used as the optional hook text on the video)."""
-    clip = _clip_or_404(session, clip_id)
+    clip = _clip_or_404(session, clip_id, user)
     clip.title = " ".join(body.title.split()) or None
     session.add(clip)
     session.commit()
@@ -283,10 +315,10 @@ def _description(project: Project, clip: Clip) -> ClipDescription:
 
 
 @router.get("/clips/{clip_id}/description", response_model=ClipDescription)
-def get_clip_description(clip_id: str, session: Session = Depends(get_session)) -> ClipDescription:
+def get_clip_description(clip_id: str, session: Session = Depends(get_session), user: User = Depends(current_user)) -> ClipDescription:
     """The saved description (or a simple one if none was written yet), with the credit."""
-    clip = _clip_or_404(session, clip_id)
-    return _description(get_project_or_404(session, clip.project_id), clip)
+    clip = _clip_or_404(session, clip_id, user)
+    return _description(get_project_or_404(session, clip.project_id, user), clip)
 
 
 @router.post("/clips/{clip_id}/description", response_model=ClipDescription)
@@ -294,10 +326,12 @@ def write_clip_description(
     clip_id: str,
     session: Session = Depends(get_session),
     describer: Describer | None = Depends(get_describer),
+    user: User = Depends(current_user),
 ) -> ClipDescription:
     """Have Claude write a new description for the clip (each call gives a fresh one)."""
-    clip = _clip_or_404(session, clip_id)
-    project = get_project_or_404(session, clip.project_id)
+    clip = _clip_or_404(session, clip_id, user)
+    project = get_project_or_404(session, clip.project_id, user)
+    _require_editing(user)
     if describer is None:
         return _description(project, clip)  # no API key: the simple description
     prompt = user_prompt(clip_text=clip.text, clip_title=clip.title, clip_hook=clip.hook,
@@ -325,18 +359,20 @@ def create_export(
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     queue: Queue = Depends(get_queue),
+    user: User = Depends(current_user),
 ) -> JobRead:
-    clip = _clip_or_404(session, clip_id)
-    project = _ready_project(session, clip.project_id)
-    key = export_key(clip, body.settings)
-    name = export_filename(project, clip, body.settings)
+    clip = _clip_or_404(session, clip_id, user)
+    project = _ready_project(session, clip.project_id, user)
+    settings = plan_settings(user, body.settings)
+    key = export_key(clip, settings)
+    name = export_filename(project, clip, settings)
     if storage.exists(key):
         job = completed_job(session, project_id=project.id, job_type=JobType.EXPORT,
                             result_key=key, result_name=name)
     else:
-        job = enqueue_job(session, queue, project_id=project.id, job_type=JobType.EXPORT,
-                          func=export_clip, result_key=key, result_name=name,
-                          clip_id=clip.id, settings_json=body.settings.model_dump_json())
+        job = enqueue_job(session, with_priority(queue, plan_of(user).priority), project_id=project.id,
+                          job_type=JobType.EXPORT, func=export_clip, result_key=key, result_name=name,
+                          clip_id=clip.id, settings_json=settings.model_dump_json())
     return JobRead.of(job)
 
 
@@ -347,8 +383,12 @@ def create_zip_export(
     body: ZipExportRequest,
     session: Session = Depends(get_session),
     queue: Queue = Depends(get_queue),
+    user: User = Depends(current_user),
 ) -> JobRead:
-    project = _ready_project(session, project_id)
+    project = _ready_project(session, project_id, user)
+    if not plan_of(user).zip:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, NEEDS_PRO)
+    settings = plan_settings(user, body.settings)
     query = select(Clip).where(Clip.project_id == project_id, Clip.source == body.source)
     if body.clip_ids is not None:
         query = query.where(Clip.id.in_(body.clip_ids))
@@ -356,8 +396,9 @@ def create_zip_export(
     if not clips:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "There are no clips to export.")
     zip_key = f"{project.prefix}zips/{new_id()}.zip"
-    job = enqueue_job(session, queue, project_id=project_id, job_type=JobType.EXPORT_ZIP,
+    job = enqueue_job(session, with_priority(queue, plan_of(user).priority), project_id=project_id,
+                      job_type=JobType.EXPORT_ZIP,
                       func=export_zip, result_key=zip_key, result_name=zip_filename(project),
-                      clip_ids=[c.id for c in clips], settings_json=body.settings.model_dump_json(),
+                      clip_ids=[c.id for c in clips], settings_json=settings.model_dump_json(),
                       zip_key=zip_key)
     return JobRead.of(job)

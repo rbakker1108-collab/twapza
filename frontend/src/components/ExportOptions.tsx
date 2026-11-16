@@ -1,6 +1,8 @@
 import { useRef } from "react";
 
 import type { CaptionSettings, ExportSettings, Project } from "../api/client";
+import { usePlan } from "../auth/AuthProvider";
+import { UpgradeNote } from "../auth/UpgradeNote";
 import { msg, useT } from "../i18n";
 import { CaptionOptions, DEFAULT_CAPTIONS } from "./CaptionOptions";
 
@@ -18,6 +20,9 @@ export const DEFAULT_EXPORT: ExportSettings = {
 };
 
 type Boost = "hook_text" | "cold_open" | "cut_pauses" | "cut_fillers" | "progress_bar";
+
+/** Boosts that need the Creator plan (the progress bar is on every plan). */
+const CREATOR_BOOSTS: Boost[] = ["hook_text", "cold_open", "cut_pauses", "cut_fillers"];
 
 const BOOSTS: { key: Boost; title: string; hint: string }[] = [
   {
@@ -78,6 +83,7 @@ function Choice({ checked, onSelect, disabled, title, hint }: {
 
 export function ExportOptions({ project, value, onChange, disabled }: Props) {
   const t = useT();
+  const plan = usePlan();
   const set = (patch: Partial<ExportSettings>) => onChange({ ...value, ...patch });
   const vertical = value.aspect === "9:16";
   // Remember the caption style while captions are switched off.
@@ -148,27 +154,41 @@ export function ExportOptions({ project, value, onChange, disabled }: Props) {
           {t("Boost retention")} <span className="font-normal text-muted">{t("(optional, applied when you download)")}</span>
         </p>
         <div className="grid gap-2 sm:grid-cols-3">
-          {BOOSTS.map(({ key, title, hint }) => (
-            <label
-              key={key}
-              className={`flex cursor-pointer flex-col rounded-lg border px-3 py-2 text-sm transition ${
-                value[key] ? "border-brand-500 bg-brand-500/10" : "border-line-strong bg-surface-2 hover:border-faint"
-              }`}
-            >
-              <span className="flex items-center gap-2 font-medium">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-brand-500"
-                  checked={value[key]}
-                  onChange={(e) => set({ [key]: e.target.checked })}
-                />
-                {t(title)}
-              </span>
-              <span className="ps-6 text-muted">{t(hint)}</span>
-            </label>
-          ))}
+          {BOOSTS.map(({ key, title, hint }) => {
+            const locked = !plan.editing && CREATOR_BOOSTS.includes(key);
+            const on = value[key] && !locked;
+            return (
+              <label
+                key={key}
+                className={`flex flex-col rounded-lg border px-3 py-2 text-sm transition ${
+                  locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                } ${on ? "border-brand-500 bg-brand-500/10" : "border-line-strong bg-surface-2 hover:border-faint"}`}
+              >
+                <span className="flex items-center gap-2 font-medium">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-brand-500"
+                    checked={on}
+                    disabled={locked}
+                    onChange={(e) => set({ [key]: e.target.checked })}
+                  />
+                  {t(title)}
+                  {locked && (
+                    <span className="ms-auto rounded bg-brand-500/15 px-1.5 text-[11px] font-semibold text-brand-300">
+                      {t("Creator")}
+                    </span>
+                  )}
+                </span>
+                <span className="ps-6 text-muted">{t(hint)}</span>
+              </label>
+            );
+          })}
         </div>
-        {value.hook_text && (
+        {!plan.editing && <UpgradeNote plan="creator" />}
+        {plan.watermark && (
+          <p className="text-xs text-muted">{t("Downloads on the Free plan have a small “Made with Twapza” mark.")}</p>
+        )}
+        {value.hook_text && plan.editing && (
           <div className="flex flex-wrap items-center gap-4 ps-1 text-sm" role="radiogroup" aria-label={t("Show the hook text")}>
             <span className="text-muted">{t("Show the hook text:")}</span>
             <label className="flex items-center gap-1.5">

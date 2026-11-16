@@ -74,6 +74,46 @@ class Settings(BaseSettings):
     # Cleanup scheduler
     cleanup_interval_seconds: int = 15 * 60
 
+    # Accounts
+    # Where people open Twapza (links in emails, checkout return URLs). https:// also makes the
+    # login cookie Secure.
+    public_url: str = "http://localhost:8080"
+    session_days: int = 30
+    # Password-reset emails. Without an SMTP host the link is written to the API log instead.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str = "Twapza <no-reply@localhost>"
+    smtp_starttls: bool = True
+
+    # Payments (Lemon Squeezy). Without an API key, paid plans can't be bought (plans can still
+    # be set by hand with `python -m twapza.users set-plan`).
+    lemonsqueezy_api_key: SecretStr | None = None
+    lemonsqueezy_store_id: str | None = None
+    lemonsqueezy_webhook_secret: SecretStr | None = None
+    # Variant IDs of the four subscription prices (Products -> variant -> ID in Lemon Squeezy)
+    lemonsqueezy_variant_creator_monthly: str | None = None
+    lemonsqueezy_variant_creator_yearly: str | None = None
+    lemonsqueezy_variant_pro_monthly: str | None = None
+    lemonsqueezy_variant_pro_yearly: str | None = None
+
+    @property
+    def billing_enabled(self) -> bool:
+        key = self.lemonsqueezy_api_key.get_secret_value() if self.lemonsqueezy_api_key else ""
+        return bool(key and self.lemonsqueezy_store_id)
+
+    @property
+    def variants(self) -> dict[tuple[str, str], str]:
+        """(plan, period) -> Lemon Squeezy variant ID, for the ones that are configured."""
+        out = {
+            ("creator", "monthly"): self.lemonsqueezy_variant_creator_monthly,
+            ("creator", "yearly"): self.lemonsqueezy_variant_creator_yearly,
+            ("pro", "monthly"): self.lemonsqueezy_variant_pro_monthly,
+            ("pro", "yearly"): self.lemonsqueezy_variant_pro_yearly,
+        }
+        return {k: str(v).strip() for k, v in out.items() if v and str(v).strip()}
+
     @property
     def max_upload_bytes(self) -> int:
         return int(self.max_upload_gb * 1024**3)

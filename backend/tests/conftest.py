@@ -31,6 +31,8 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("TWAPZA_CHUNK_SIZE_MB", "1")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     _clear_caches()
+    redis = FakeRedis()  # rate limits
+    monkeypatch.setattr("twapza.queue.get_redis", lambda: redis)
     init_db()
     yield tmp_path
     get_engine().dispose()
@@ -83,13 +85,59 @@ def sync_queue(monkeypatch) -> Queue:
     return queue
 
 
+TEST_PASSWORD = "correct horse battery"
+
+
+def set_plan(email: str, plan: str) -> None:
+    """Give an account a plan by hand (like `python -m twapza.users set-plan`)."""
+    from sqlmodel import Session
+
+    from twapza.accounts.users import find_user
+
+    with Session(get_engine()) as session:
+        user = find_user(session, email)
+        user.plan, user.subscription_status = plan, (None if plan == "free" else "manual")
+        session.add(user)
+        session.commit()
+
+
+def signup(client, email: str, plan: str = "free"):
+    r = client.post("/api/auth/signup", json={"email": email, "password": TEST_PASSWORD})
+    assert r.status_code == 201, r.text
+    if plan != "free":
+        set_plan(email, plan)
+    return r
+
+
 @pytest.fixture
-def client(sync_queue):
+def app(sync_queue):
     from twapza.api.app import create_app
 
     app = create_app()
     app.dependency_overrides[get_queue] = lambda: sync_queue
+    return app
+
+
+@pytest.fixture
+def anon_client(app):
+    """Not logged in."""
     with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def client(app):
+    """Logged in as owner@example.com on the Pro plan (no limits get in the way)."""
+    with TestClient(app) as c:
+        signup(c, "owner@example.com", "pro")
+        yield c
+
+
+@pytest.fixture
+def free_client(app):
+    """Logged in as free@example.com on the Free plan."""
+    with TestClient(app) as c:
+        signup(c, "free@example.com")
         yield c
 
 

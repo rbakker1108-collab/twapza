@@ -35,6 +35,13 @@ def get_queue() -> Queue:
     return Queue(settings.queue_name, connection=get_redis())
 
 
+def with_priority(queue: Queue, priority: bool) -> Queue:
+    """The priority twin of ``queue`` (workers take its jobs first) when ``priority`` is set."""
+    if not priority or queue.name.endswith("-priority"):
+        return queue
+    return Queue(f"{queue.name}-priority", connection=queue.connection, is_async=queue._is_async)
+
+
 def enqueue_job(
     session: Session,
     queue: Queue,

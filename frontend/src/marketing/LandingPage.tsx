@@ -5,7 +5,6 @@ import { AUDIENCES, FAQ, FEATURES, STEPS } from "./content";
 import { PricingCards } from "./PricingCards";
 import { ProductMock } from "./ProductMock";
 import { Heading, IconBadge, PrimaryButton, SecondaryButton, Section } from "./ui";
-import { WaitlistForm } from "./WaitlistForm";
 
 export function LandingPage() {
   const { t } = useI18n();
@@ -27,7 +26,7 @@ export function LandingPage() {
               {t("Paste a YouTube link or upload a video. Twapza finds the best moments, adds animated captions and hooks, and gives you clips ready for Shorts, TikTok and Reels.")}
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
-              <PrimaryButton to="/app">{t("Start for free")}</PrimaryButton>
+              <PrimaryButton to="/signup">{t("Start for free")}</PrimaryButton>
               <SecondaryButton to="/#how">{t("See how it works")}</SecondaryButton>
             </div>
             <p className="mt-4 text-sm text-faint">
@@ -109,14 +108,14 @@ export function LandingPage() {
         </div>
       </Section>
 
-      {/* Waitlist */}
-      <Section id="early-access">
+      {/* Final call to action */}
+      <Section id="start">
         <div className="relative overflow-hidden rounded-3xl border border-brand-500/30 bg-gradient-to-br from-brand-500/20 via-surface to-surface p-8 sm:p-12">
           <div className="mx-auto max-w-xl text-center">
-            <h2 className="text-3xl font-semibold tracking-tight">{t("Be the first to try Twapza")}</h2>
-            <p className="mt-3 text-muted">{t("We're opening Twapza to creators step by step. Leave your email and get early access, with launch pricing.")}</p>
-            <div className="mt-6 text-start">
-              <WaitlistForm />
+            <h2 className="text-3xl font-semibold tracking-tight">{t("Make your first Shorts today")}</h2>
+            <p className="mt-3 text-muted">{t("Create a free account and turn a video into Shorts in minutes. No credit card needed.")}</p>
+            <div className="mt-6">
+              <PrimaryButton to="/signup">{t("Start for free")}</PrimaryButton>
             </div>
           </div>
         </div>

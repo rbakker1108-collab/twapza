@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { api, type Clip, type ClipDescription } from "../api/client";
+import { usePlan } from "../auth/AuthProvider";
+import { UpgradeNote } from "../auth/UpgradeNote";
 import { useT } from "../i18n";
 
 interface Props {
@@ -22,6 +24,7 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [hookTitle, setHookTitle] = useState<string | null>(currentTitle);
+  const plan = usePlan();
   useEffect(() => setHookTitle(currentTitle), [currentTitle]);
 
   const show = (d: ClipDescription) => {
@@ -50,7 +53,8 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
       .then((d) => {
         if (!active) return;
         show(d);
-        if (!d.ai) write(); // first time: let Claude write one (simple text if there's no key)
+        // First time: let Claude write one (simple text if there's no key). AI copy needs Creator.
+        if (!d.ai && plan.editing) write();
       })
       .catch((err) => active && setError(err.message));
     return () => {
@@ -152,7 +156,8 @@ export function DescriptionPanel({ clipId, currentTitle = null, onTitleChange }:
         >
           {copied === "description" ? t("Copied ✓") : t("Copy description")}
         </button>
-        {(desc?.ai || error) && (
+        {!plan.editing && <UpgradeNote plan="creator" className="self-center" />}
+        {plan.editing && (desc?.ai || error) && (
           <button
             type="button"
             onClick={write}

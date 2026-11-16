@@ -54,7 +54,7 @@ export function GuidePage() {
       </div>
       <div className="mt-12 rounded-2xl border border-line bg-surface p-6 text-center">
         <p className="mb-4 font-medium">{t("Put it into practice with your own videos.")}</p>
-        <PrimaryButton to="/app">{t("Start for free")}</PrimaryButton>
+        <PrimaryButton to="/signup">{t("Start for free")}</PrimaryButton>
       </div>
     </article>
   );

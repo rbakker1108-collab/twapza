@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlmodel import Session, delete, select
 
 from twapza.config import get_settings
-from twapza.db.models import Clip, Job, Project, UploadPart, utcnow
+from twapza.db.models import AuthSession, Clip, Job, PasswordReset, Project, UploadPart, utcnow
 from twapza.db.session import get_engine, init_db
 from twapza.storage import Storage, get_storage
 
@@ -71,10 +71,20 @@ def sweep_orphans(now: datetime | None = None) -> int:
     return removed
 
 
+def cleanup_logins(now: datetime | None = None) -> None:
+    """Forget expired logins and password-reset links."""
+    now = now or utcnow()
+    with Session(get_engine()) as session:
+        session.exec(delete(AuthSession).where(AuthSession.expires_at <= now))
+        session.exec(delete(PasswordReset).where(PasswordReset.expires_at <= now))
+        session.commit()
+
+
 def run_maintenance(now: datetime | None = None) -> None:
-    """One cleanup pass: expired projects, orphaned files."""
+    """One cleanup pass: expired projects, orphaned files, expired logins."""
     cleanup_expired(now)
     sweep_orphans(now)
+    cleanup_logins(now)
 
 
 REAP_INTERVAL_SECONDS = 60

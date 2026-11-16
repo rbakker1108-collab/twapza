@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api, type PublicConfig } from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
 import { RecentProjects } from "../components/RecentProjects";
 import { UploadForm } from "../components/UploadForm";
 import { YoutubeImportForm } from "../components/YoutubeImportForm";
@@ -15,10 +16,16 @@ export function UploadPage() {
   const navigate = useNavigate();
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [source, setSource] = useState<Source>("youtube");
+  const { account, refresh } = useAuth();
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
-  }, []);
+    void refresh(); // minutes used may have changed since the last visit
+  }, [refresh]);
+
+  // The longest video allowed: the server limit, or the plan's if that is lower.
+  const planMax = account ? account.plan.max_video_minutes * 60 : Infinity;
+  const maxDuration = config ? Math.min(config.max_duration_seconds, planMax) : undefined;
 
   const youtube = config?.youtube_enabled !== false;
   const active: Source = youtube ? source : "file";
@@ -72,7 +79,7 @@ export function UploadPage() {
           ) : (
             <UploadForm
               maxBytes={config?.max_upload_bytes}
-              maxDurationSeconds={config?.max_duration_seconds}
+              maxDurationSeconds={maxDuration}
               allowedExtensions={config?.allowed_extensions}
               onUpload={async (file, onProgress, signal) => {
                 const { project } = await uploadFile(file, true, { onProgress, signal });
@@ -81,8 +88,27 @@ export function UploadPage() {
             />
           )}
         </div>
+        {account && (
+          <p className="mt-4 text-sm text-muted" data-testid="usage">
+            {t("Video minutes this month")}:{" "}
+            <span className="font-medium text-ink">
+              {t("{used} of {limit} min", {
+                used: Math.round(Math.min(account.usage.used_minutes, account.usage.limit_minutes)),
+                limit: account.usage.limit_minutes,
+              })}
+            </span>
+            {account.plan.id !== "pro" && (
+              <>
+                {" · "}
+                <Link to="/account#plans" className="text-brand-400 hover:underline">
+                  {t("Upgrade")}
+                </Link>
+              </>
+            )}
+          </p>
+        )}
         {config && (
-          <p className="mt-3 text-sm text-faint">
+          <p className="mt-1 text-sm text-faint">
             {t("Everything is deleted automatically after {hours} hours.", { hours: config.retention_hours })}
           </p>
         )}

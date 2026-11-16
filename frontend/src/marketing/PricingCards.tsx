@@ -1,12 +1,42 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import type { PlanId } from "../api/client";
+import { choosePlan, useAuth } from "../auth/AuthProvider";
 import { useI18n } from "../i18n";
 import { PLANS, price } from "./plans";
 import { Icon } from "./ui";
 
 export function PricingCards({ yearly }: { yearly: boolean }) {
   const { t, lang } = useI18n();
+  const { account } = useAuth();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const period = yearly ? "yearly" : "monthly";
+
+  /** Logged out: sign up first (then on to payment). Logged in: straight to the checkout. */
+  function target(planId: string): string {
+    if (!account) return planId === "free" ? "/signup" : `/signup?plan=${planId}&period=${period}`;
+    return planId === "free" || account.plan.id === planId ? "/app" : "/account#plans";
+  }
+  const direct = (planId: string) =>
+    account && planId !== "free" && account.plan.id === "free" && account.billing_enabled;
+
+  async function buy(planId: PlanId) {
+    if (!account) return;
+    setBusy(planId);
+    setError(null);
+    try {
+      await choosePlan(account, planId, period);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
+    <>
     <div className="grid gap-5 md:grid-cols-3">
       {PLANS.map((plan) => {
         const amount = yearly ? plan.yearly : plan.monthly;
@@ -40,17 +70,40 @@ export function PricingCards({ yearly }: { yearly: boolean }) {
                 </li>
               ))}
             </ul>
-            <Link
-              to="/app"
-              className={`mt-6 rounded-xl px-4 py-2.5 text-center font-semibold transition ${
-                plan.popular ? "bg-brand-500 text-black hover:bg-brand-400" : "border border-line-strong hover:bg-surface-2"
-              }`}
-            >
-              {amount === 0 ? t("Start for free") : t("Get {plan}", { plan: t(plan.name) })}
-            </Link>
+            {direct(plan.id) ? (
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => buy(plan.id as PlanId)}
+                className={`mt-6 rounded-xl px-4 py-2.5 text-center font-semibold transition disabled:opacity-60 ${
+                  plan.popular ? "bg-brand-500 text-black hover:bg-brand-400" : "border border-line-strong hover:bg-surface-2"
+                }`}
+              >
+                {busy === plan.id ? t("One moment…") : t("Get {plan}", { plan: t(plan.name) })}
+              </button>
+            ) : (
+              <Link
+                to={target(plan.id)}
+                className={`mt-6 rounded-xl px-4 py-2.5 text-center font-semibold transition ${
+                  plan.popular ? "bg-brand-500 text-black hover:bg-brand-400" : "border border-line-strong hover:bg-surface-2"
+                }`}
+              >
+                {account?.plan.id === plan.id
+                  ? t("Current plan")
+                  : amount === 0
+                    ? t("Start for free")
+                    : t("Get {plan}", { plan: t(plan.name) })}
+              </Link>
+            )}
           </div>
         );
       })}
     </div>
+    {error && (
+      <p role="alert" className="mt-4 text-center text-sm text-red-400">
+        {error}
+      </p>
+    )}
+    </>
   );
 }

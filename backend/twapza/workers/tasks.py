@@ -12,6 +12,7 @@ from pathlib import Path
 from sqlmodel import Session, delete, select
 
 from twapza import queue as jobqueue
+from twapza.accounts import usage
 from twapza import transcription
 from twapza.captions.ass import TextBox, build_ass
 from twapza.captions.style import FONTS_DIR
@@ -207,17 +208,17 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
     if settings.cut_fillers:
         words = [w for w in words if not is_filler(w)]
     hook = clip.title if settings.hook_text else None
-    boxes = clip_boxes(clip)
+    boxes = clip_boxes(clip) if settings.texts else []
     progress = None
     if settings.progress_bar:
         progress = settings.captions.highlight_color if settings.captions else "#FFFFFF"
     with storage.read_path(project.original_key) as src, \
             tempfile.TemporaryDirectory(prefix="twapza-ass-") as tmp:
-        if settings.captions or hook or boxes or progress:
+        if settings.captions or hook or boxes or progress or settings.watermark:
             width, height = output_size(settings, *ffmpeg.probe(src).display_size)
             ass_text = build_ass(words, segments=segments, settings=settings.captions, hook=hook,
                                  hook_full=settings.hook_full, boxes=boxes, progress_color=progress,
-                                 width=width, height=height)
+                                 watermark=settings.watermark, width=width, height=height)
             if ass_text:
                 ass_path = Path(tmp) / "captions.ass"
                 ass_path.write_text(ass_text, encoding="utf-8")
@@ -231,6 +232,15 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
 
 
 # --- tasks ---------------------------------------------------------------------
+
+def _plan_check(project: Project, duration: float) -> tuple[str | None, bool]:
+    """(why the owner's plan doesn't allow this video or None, whether their jobs get priority)."""
+    with Session(get_engine()) as session:
+        user = usage.owner(session, project)
+        if user is None:
+            return None, False
+        return usage.video_problem(session, user, duration), usage.plan_of(user).priority
+
 
 def ingest_project(job_id: str, project_id: str) -> None:
     """Probe the upload, extract audio, build the preview proxy and queue transcription."""
@@ -248,6 +258,9 @@ def ingest_project(job_id: str, project_id: str) -> None:
                     f"Video is {info.duration / 60:.0f} min long; "
                     f"the limit is {settings.max_duration_min:.0f} min."
                 )
+            problem, priority = _plan_check(project, info.duration)
+            if problem:
+                raise ffmpeg.MediaError(problem)
             project = _set_project(
                 project_id,
                 duration=info.duration, width=info.width, height=info.height, fps=info.fps,
@@ -269,11 +282,14 @@ def ingest_project(job_id: str, project_id: str) -> None:
                     on_progress=progress.stage(15, 100, "Building preview"),
                 )
 
-        _set_project(project_id, status=ProjectStatus.READY)
+        project = _set_project(project_id, status=ProjectStatus.READY)
+        with Session(get_engine()) as session:
+            usage.record_usage(session, project, info.duration)  # this month's minutes
         if info.has_audio:
             # Queue now (not after this job) so the UI sees it as soon as ingest finishes.
             with Session(get_engine()) as session:
-                jobqueue.enqueue_job(session, jobqueue.get_queue(), project_id=project_id,
+                jobqueue.enqueue_job(session, jobqueue.with_priority(jobqueue.get_queue(), priority),
+                                     project_id=project_id,
                                      job_type=JobType.TRANSCRIBE, func=transcribe_project)
         else:
             _save_transcript(project, Transcript.empty(info.duration))
@@ -318,6 +334,9 @@ def import_youtube(job_id: str, project_id: str, url: str) -> None:
                 f"Video is {info.duration / 60:.0f} min long; "
                 f"the limit is {settings.max_duration_min:.0f} min."
             )
+        problem, priority = _plan_check(_get_project(project_id), info.duration or 0)
+        if problem:  # checked again after downloading, but this saves the download
+            raise TaskError(problem)
         project = _set_project(project_id, filename=safe_filename(info.title), ext="mp4",
                                source_title=info.title, source_channel=info.channel,
                                source_channel_url=info.channel_url)
@@ -330,8 +349,8 @@ def import_youtube(job_id: str, project_id: str, url: str) -> None:
             size = dst.stat().st_size
         _set_project(project_id, size_bytes=size, status=ProjectStatus.QUEUED)
         with Session(get_engine()) as session:
-            jobqueue.enqueue_job(session, jobqueue.get_queue(), project_id=project_id,
-                                 job_type=JobType.INGEST, func=ingest_project)
+            jobqueue.enqueue_job(session, jobqueue.with_priority(jobqueue.get_queue(), priority),
+                                 project_id=project_id, job_type=JobType.INGEST, func=ingest_project)
 
     if not run_tracked(job_id, body):
         _mark_project_failed(project_id, job_id)

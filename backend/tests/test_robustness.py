@@ -216,7 +216,7 @@ def test_watchdog_fails_jobs_whose_worker_is_gone():
 # --- project management API -----------------------------------------------------------------
 
 def test_cancel_endpoint(client):
-    project = make_project()
+    project = make_project(user_id=client.get("/api/auth/me").json()["id"])
     running = make_job(project.id, status=JobStatus.RUNNING)
     ingest = make_job(project.id, type=JobType.INGEST, status=JobStatus.RUNNING)
     done = make_job(project.id, status=JobStatus.SUCCEEDED)
@@ -228,9 +228,11 @@ def test_cancel_endpoint(client):
 
 
 def test_list_projects_newest_first_without_expired(client):
-    a = make_project(filename="first.mp4", created_at=utcnow() - timedelta(hours=2))
-    b = make_project(filename="second.mp4")
-    make_project(filename="expired.mp4", expires_at=utcnow() - timedelta(minutes=1))
+    me = client.get("/api/auth/me").json()["id"]
+    a = make_project(filename="first.mp4", created_at=utcnow() - timedelta(hours=2), user_id=me)
+    b = make_project(filename="second.mp4", user_id=me)
+    make_project(filename="expired.mp4", expires_at=utcnow() - timedelta(minutes=1), user_id=me)
+    make_project(filename="someone else's.mp4")
     with Session(get_engine()) as s:
         s.add(Clip(project_id=a.id, source=ClipSource.SIMPLE, index=1, start=0, end=30))
         s.add(Clip(project_id=a.id, source=ClipSource.AI, index=1, start=0, end=30))

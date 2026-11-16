@@ -1,4 +1,8 @@
-/** Pricing plans shown on the website. Change prices and limits here only. Prices in USD. */
+/**
+ * Pricing plans shown on the website. Prices in USD; the real prices are set on the Lemon Squeezy
+ * variants. The limits themselves are enforced by the backend: backend/twapza/accounts/plans.py
+ * (keep the texts here in sync with it).
+ */
 import { msg } from "../i18n";
 
 export interface Plan {
@@ -33,6 +37,7 @@ export const PLANS: Plan[] = [
     blurb: msg("For creators who post Shorts every week."),
     features: [
       msg("300 minutes of video per month"),
+      msg("Videos up to 2 hours"),
       msg("No watermark"),
       msg("Clip editor: hook text, your own texts, caption fixes"),
       msg("AI titles, descriptions and hashtags"),

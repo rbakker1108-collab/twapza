@@ -17,10 +17,10 @@ log = logging.getLogger(__name__)
 # version to MIGRATIONS. If there is no migration path (e.g. a much older
 # database), the database and stored project files are reset: all data is
 # temporary (24h retention). Replace with Alembic before real deployments.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # Tables that hold data people expect us to keep (never dropped by the reset below).
-PERMANENT_TABLES = {"waitlistentry"}
+PERMANENT_TABLES = {"waitlistentry", "user", "authsession", "passwordreset", "usageevent"}
 
 MIGRATIONS: dict[int, list[str]] = {
     # version reached -> statements that upgrade from version - 1
@@ -44,6 +44,10 @@ MIGRATIONS: dict[int, list[str]] = {
     ],
     7: [
         "ALTER TABLE clip ADD COLUMN overlays VARCHAR",
+    ],
+    8: [  # accounts (the new account tables are created by create_all)
+        "ALTER TABLE project ADD COLUMN user_id VARCHAR",
+        "CREATE INDEX IF NOT EXISTS ix_project_user_id ON project (user_id)",
     ],
 }
 
@@ -119,7 +123,7 @@ def init_db() -> None:
                 log.warning("database schema v%s != v%s: resetting temporary data", version, SCHEMA_VERSION)
                 from twapza.storage import get_storage
 
-                # Projects are temporary; the waitlist (sign-ups from the website) is not.
+                # Projects are temporary; accounts and the waitlist are not.
                 temporary = [t for t in SQLModel.metadata.sorted_tables if t.name not in PERMANENT_TABLES]
                 SQLModel.metadata.drop_all(engine, tables=temporary)
                 get_storage().delete_prefix("projects/")

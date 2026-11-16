@@ -161,6 +161,8 @@ def test_schema_v2_database_is_migrated_without_losing_data(isolated_env):
     with engine.begin() as conn:
         for column in ("source_url", "source_title", "source_channel", "source_channel_url"):
             conn.execute(text(f"ALTER TABLE project DROP COLUMN {column}"))  # added in v4/v5
+        conn.execute(text("DROP INDEX ix_project_user_id"))  # added in v8
+        conn.execute(text("ALTER TABLE project DROP COLUMN user_id"))
         conn.execute(text("PRAGMA user_version = 2"))
         conn.execute(text("INSERT INTO clip (id, project_id, source, \"index\", start, \"end\", text) "
                           "VALUES ('c', 'p', 'SIMPLE', 1, 0, 60, 'hi')"))

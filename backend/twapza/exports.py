@@ -41,6 +41,11 @@ class ExportSettings(BaseModel):
     cut_fillers: bool = False
     # A thin bar along the top that fills up as the clip plays.
     progress_bar: bool = False
+    # Set by the server from the account's plan (whatever the browser sends):
+    # a small "Twapza" mark (Free plan),
+    watermark: bool = False
+    # and whether texts placed in the clip editor are burned in (Creator and up).
+    texts: bool = True
 
     def normalized(self) -> "ExportSettings":
         """Drop options that don't affect the output, so equal outputs share a cache key."""

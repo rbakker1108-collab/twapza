@@ -10,13 +10,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from rq import Queue
 from sqlmodel import Session
 
-from twapza.api.routes.uploads import RIGHTS_REQUIRED
+from twapza.accounts.usage import plan_of
+from twapza.api.deps import current_user
+from twapza.api.routes.uploads import RIGHTS_REQUIRED, require_minutes_left
 from twapza.api.schemas import CompleteUploadResponse, CreateImport, JobRead, ProjectRead
 from twapza.config import Settings, get_settings
-from twapza.db.models import JobType, Project, ProjectStatus, utcnow
+from twapza.db.models import JobType, Project, ProjectStatus, User, utcnow
 from twapza.db.session import get_session
 from twapza.importing.youtube import canonical_url, youtube_video_id
-from twapza.queue import enqueue_job, get_queue
+from twapza.queue import enqueue_job, get_queue, with_priority
 from twapza.workers.tasks import import_youtube
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
@@ -31,6 +33,7 @@ def create_import(
     session: Session = Depends(get_session),
     queue: Queue = Depends(get_queue),
     settings: Settings = Depends(get_settings),
+    user: User = Depends(current_user),
 ) -> CompleteUploadResponse:
     if not settings.youtube_enabled:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Importing from YouTube is turned off.")
@@ -40,9 +43,12 @@ def create_import(
     if video_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, NOT_A_VIDEO_LINK)
 
+    require_minutes_left(session, user)
+
     url = canonical_url(video_id)
     now = utcnow()
     project = Project(
+        user_id=user.id,
         filename="YouTube video.mp4",  # replaced by the video's title once it is looked up
         ext="mp4",
         size_bytes=0,
@@ -57,7 +63,8 @@ def create_import(
     session.add(project)
     session.commit()
 
-    job = enqueue_job(session, queue, project_id=project.id, job_type=JobType.IMPORT,
+    job = enqueue_job(session, with_priority(queue, plan_of(user).priority), project_id=project.id,
+                      job_type=JobType.IMPORT,
                       func=import_youtube, url=url)
     session.refresh(project)
     return CompleteUploadResponse(project=ProjectRead.of(project, [job]), job=JobRead.of(job))

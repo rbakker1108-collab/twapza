@@ -84,7 +84,7 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: msg("How long can my videos be?"),
-    a: msg("Up to 3 hours, which covers most podcasts, streams, interviews and webinars."),
+    a: msg("Up to 1 hour on Free, 2 hours on Creator and 3 hours on Pro, which covers most podcasts, streams, interviews and webinars."),
   },
 ];
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
+import { useAuth } from "../auth/AuthProvider";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { Logo } from "../components/Logo";
 import { msg, useT } from "../i18n";
@@ -15,6 +16,7 @@ export const NAV = [
 /** Header, footer and scroll handling for the public website pages. */
 export function MarketingLayout() {
   const t = useT();
+  const { account } = useAuth();
   const { pathname, hash } = useLocation();
   const [open, setOpen] = useState(false);
 
@@ -45,15 +47,26 @@ export function MarketingLayout() {
             <div className="hidden sm:block">
               <LanguageSwitcher />
             </div>
-            <Link to="/app" className="hidden text-sm text-muted hover:text-ink sm:block">
-              {t("Log in")}
-            </Link>
-            <Link
-              to="/app"
-              className="rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-black transition hover:bg-brand-400"
-            >
-              {t("Start for free")}
-            </Link>
+            {account ? (
+              <Link
+                to="/app"
+                className="rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-black transition hover:bg-brand-400"
+              >
+                {t("Open Twapza")}
+              </Link>
+            ) : (
+              <>
+                <Link to="/login" className="hidden text-sm text-muted hover:text-ink sm:block">
+                  {t("Log in")}
+                </Link>
+                <Link
+                  to="/signup"
+                  className="rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-black transition hover:bg-brand-400"
+                >
+                  {t("Start for free")}
+                </Link>
+              </>
+            )}
             <button
               type="button"
               className="rounded-lg p-1.5 text-muted hover:bg-surface-2 md:hidden"
@@ -74,6 +87,11 @@ export function MarketingLayout() {
                 {t(n.label)}
               </NavLink>
             ))}
+            {!account && (
+              <Link to="/login" className={`block ${link({ isActive: false })}`}>
+                {t("Log in")}
+              </Link>
+            )}
             <div className="pt-2">
               <LanguageSwitcher />
             </div>

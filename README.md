@@ -50,8 +50,8 @@ cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open **<http://localhost:8080>** for the website (features, pricing, guides, early-access list) and
-**<http://localhost:8080/app>** for the app itself. Stop with `Ctrl+C` or `docker compose down`.
+Open **<http://localhost:8080>** for the website (features, pricing, guides) and
+**<http://localhost:8080/app>** for the app itself (create an account the first time). Stop with `Ctrl+C` or `docker compose down`.
 Your projects survive restarts (they live in the `twapza-data` Docker volume until they expire).
 
 The first transcription downloads the Whisper model (`small`, ~500 MB) once.
@@ -83,19 +83,63 @@ The interface is available in English, Dutch, Spanish, German, French and Arabic
 top). Captions work for any language Whisper recognises (it detects the spoken language automatically);
 Arabic captions are drawn right-to-left with a bundled Arabic font.
 
-## Website and early-access list
+## Accounts and payments
 
-The marketing pages live in `frontend/src/marketing/` (`/`, `/features`, `/solutions`, `/pricing`,
-`/resources`). Prices are a proposal: change them in `frontend/src/marketing/plans.ts`. Plans, limits
-and the watermark are not enforced yet (that needs accounts and billing).
+People sign up with an email address and password (`/signup`); the app (`/app`) needs a login and
+everyone only sees their own projects. Plans and their limits (`backend/twapza/accounts/plans.py`):
 
-Emails left in the early-access form are stored in the database (they are not deleted by the 24-hour
-cleanup). Export or remove them with:
+| | Free | Creator | Pro |
+|---|---|---|---|
+| Video minutes per month | 60 | 300 | 1,200 |
+| Longest video | 1 h | 2 h | 3 h |
+| Watermark ("Made with Twapza") | yes | no | no |
+| Hook text, own texts, caption fixes, cut pauses/fillers, cold open, AI descriptions | no | yes | yes |
+| Download all clips (ZIP) | no | no | yes |
+| Priority rendering (own queue) | no | no | yes |
+
+A video's length counts towards the month when it has been processed (deleting it doesn't give the
+minutes back). Months start on the day you signed up or subscribed.
+
+**Payments** go through [Lemon Squeezy](https://www.lemonsqueezy.com/). They are the "merchant of
+record": they sell to your customers and handle VAT and sales tax worldwide, then pay you out. To
+switch it on:
+
+1. Create a Lemon Squeezy account and a store (start in **Test mode**: fake cards, no real money).
+2. Create two **subscription products**, *Creator* and *Pro*, each with two variants (prices):
+   monthly ($15 / $29) and yearly ($144 / $276). Copy each variant's ID.
+3. **Settings → API**: create an API key. **Settings → Stores**: note the store ID.
+4. **Settings → Webhooks**: add `https://<your domain>/api/billing/webhook`, choose a signing
+   secret, and tick the `subscription_*` events (created, updated, cancelled, resumed, expired,
+   paused, unpaused).
+5. Put the key, store ID, signing secret and the four variant IDs in `.env`
+   (`TWAPZA_LEMONSQUEEZY_*`, see `.env.example`), set `TWAPZA_PUBLIC_URL`, and restart.
+
+Lemon Squeezy has to be able to reach the webhook URL, so paid plans only work once Twapza runs on a
+public address (on your own computer, use a tunnel such as `cloudflared` or `ngrok` to test). Plan
+changes and cancelling: the account page ("Manage subscription" opens Lemon Squeezy's customer
+portal). Change the website's prices in `frontend/src/marketing/plans.ts` and the real ones in
+Lemon Squeezy.
+
+**Password-reset emails** need an SMTP service (`TWAPZA_SMTP_*`); without one the reset link is
+written to the API log (`docker compose logs twapza-api`).
+
+**Managing accounts** on the server:
 
 ```bash
-docker compose exec twapza-api python -m twapza.waitlist > waitlist.csv
-docker compose exec twapza-api python -m twapza.waitlist --remove someone@example.com
+docker compose exec twapza-api python -m twapza.users list
+docker compose exec twapza-api python -m twapza.users set-plan someone@example.com pro   # free plan for friends/testers
+docker compose exec twapza-api python -m twapza.users delete someone@example.com
 ```
+
+**Before you open it to the public**: run it behind HTTPS on your own domain, don't expose port 8000
+(only the web port), set up backups of the `twapza-data` volume (the database now holds accounts),
+and publish terms and a privacy policy.
+
+## Website
+
+The marketing pages live in `frontend/src/marketing/` (`/`, `/features`, `/solutions`, `/pricing`,
+`/resources`). Emails collected by the earlier early-access form stay in the database; export or
+remove them with `python -m twapza.waitlist` (`--remove EMAIL`).
 
 ## Configuration
 

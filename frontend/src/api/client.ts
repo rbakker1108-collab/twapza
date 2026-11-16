@@ -168,6 +168,39 @@ export interface PublicConfig {
   ai_enabled: boolean;
   claude_model: string;
   youtube_enabled: boolean;
+  billing_enabled: boolean;
+  /** e.g. ["creator_monthly", "pro_yearly"]: the plans that can be bought. */
+  billing_plans: string[];
+}
+
+export type PlanId = "free" | "creator" | "pro";
+export type BillingPeriod = "monthly" | "yearly";
+
+/** Mirrors api/schemas.py AccountRead (limits come from accounts/plans.py). */
+export interface Account {
+  id: string;
+  email: string;
+  lang: string;
+  created_at: string;
+  plan: {
+    id: PlanId;
+    minutes: number;
+    max_video_minutes: number;
+    watermark: boolean;
+    /** Clip editor extras: hook text, own texts, caption fixes, cut pauses/fillers, cold open, AI copy. */
+    editing: boolean;
+    zip: boolean;
+    priority: boolean;
+  };
+  usage: { used_minutes: number; limit_minutes: number; resets_at: string };
+  subscription: {
+    plan: PlanId;
+    period: BillingPeriod | null;
+    status: string | null;
+    renews_at: string | null;
+    ends_at: string | null;
+  } | null;
+  billing_enabled: boolean;
 }
 
 export class ApiError extends Error {
@@ -235,7 +268,22 @@ export const api = {
   getDescription: (clipId: string) => request<ClipDescription>(`/api/clips/${clipId}/description`),
   writeDescription: (clipId: string) =>
     request<ClipDescription>(`/api/clips/${clipId}/description`, { method: "POST" }),
-  joinWaitlist: (email: string, lang: string) => request<{ ok: boolean }>("/api/waitlist", json({ email, lang })),
+  me: () => request<Account>("/api/auth/me"),
+  signup: (email: string, password: string, lang: string) =>
+    request<Account>("/api/auth/signup", json({ email, password, lang })),
+  login: (email: string, password: string) => request<Account>("/api/auth/login", json({ email, password })),
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  forgotPassword: (email: string) => request<{ ok: boolean }>("/api/auth/forgot-password", json({ email })),
+  resetPassword: (token: string, password: string) =>
+    request<Account>("/api/auth/reset-password", json({ token, password })),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>("/api/auth/change-password", json({ current_password, new_password })),
+  deleteAccount: (password: string) => request<void>("/api/auth/delete-account", json({ password })),
+  checkout: (plan: PlanId, period: BillingPeriod) =>
+    request<{ url: string }>("/api/billing/checkout", json({ plan, period })),
+  changePlan: (plan: PlanId, period: BillingPeriod) =>
+    request<Account>("/api/billing/change-plan", json({ plan, period })),
+  billingPortal: () => request<{ url: string }>("/api/billing/portal"),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),

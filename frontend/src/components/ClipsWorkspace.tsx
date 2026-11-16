@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { ExportSettings, Project, PublicConfig } from "../api/client";
+import { usePlan } from "../auth/AuthProvider";
 import { canUpscale, DEFAULT_EXPORT, ExportOptions } from "./ExportOptions";
 import { useT } from "../i18n";
 import { HighlightsPanel } from "./HighlightsPanel";
@@ -38,13 +39,19 @@ interface Props {
 /** Download format (shared) + the two ways of making clips. */
 export function ClipsWorkspace({ project, config }: Props) {
   const t = useT();
+  const plan = usePlan();
   const [tab, setTab] = useState<Tab>("ai");
   const [options, setOptionsState] = useState<ExportSettings>(loadSavedSettings);
   const setOptions = (next: ExportSettings) => {
     setOptionsState(next);
     saveSettings(next);
   };
-  const settings: ExportSettings = { ...options, upscale_1080: canUpscale(project) && options.upscale_1080 };
+  const settings: ExportSettings = {
+    ...options,
+    upscale_1080: canUpscale(project) && options.upscale_1080,
+    // Remembered options the current plan doesn't include are left out (e.g. after a downgrade).
+    ...(plan.editing ? {} : { hook_text: false, cold_open: false, cut_pauses: false, cut_fillers: false }),
+  };
 
   const tabClass = (t: Tab) =>
     `rounded-lg px-4 py-2 text-sm font-medium transition ${

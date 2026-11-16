@@ -63,7 +63,7 @@ export function FeaturesPage() {
         </Section>
       ))}
       <Section className="text-center">
-        <PrimaryButton to="/app">{t("Start for free")}</PrimaryButton>
+        <PrimaryButton to="/signup">{t("Start for free")}</PrimaryButton>
       </Section>
     </>
   );

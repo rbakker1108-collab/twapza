@@ -1,6 +1,8 @@
 import { useState } from "react";
 
 import { api, type ClipSource, type ExportSettings, type Job } from "../api/client";
+import { usePlan } from "../auth/AuthProvider";
+import { UpgradeNote } from "../auth/UpgradeNote";
 import { useT } from "../i18n";
 import { serverText } from "../i18n/server";
 import { isFinished, runAndDownload } from "../lib/jobs";
@@ -16,6 +18,7 @@ interface Props {
 /** Renders every clip of `source` with `settings` and downloads them as one ZIP. */
 export function DownloadAllButton({ projectId, source, settings, disabled, onError }: Props) {
   const t = useT();
+  const plan = usePlan();
   const [job, setJob] = useState<Job | null>(null);
   const busy = !!job && !isFinished(job);
 
@@ -28,6 +31,8 @@ export function DownloadAllButton({ projectId, source, settings, disabled, onErr
       setJob(null);
     }
   }
+
+  if (!plan.zip) return <UpgradeNote plan="pro" className="self-center" />;
 
   return (
     <div className="flex items-center gap-3">

@@ -17,10 +17,10 @@ log = logging.getLogger(__name__)
 # version to MIGRATIONS. If there is no migration path (e.g. a much older
 # database), the database and stored project files are reset: all data is
 # temporary (24h retention). Replace with Alembic before real deployments.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # Tables that hold data people expect us to keep (never dropped by the reset below).
-PERMANENT_TABLES = {"waitlistentry", "user", "authsession", "passwordreset", "usageevent"}
+PERMANENT_TABLES = {"waitlistentry", "user", "authsession", "passwordreset", "usageevent", "emailverification"}
 
 def _rename_column(table: str, old: str, new: str):
     """A migration step that renames a column if the table has it (older databases may lack the table)."""
@@ -28,6 +28,23 @@ def _rename_column(table: str, old: str, new: str):
         columns = {row[1] for row in conn.execute(text(f'PRAGMA table_info("{table}")'))}
         if old in columns and new not in columns:
             conn.execute(text(f'ALTER TABLE "{table}" RENAME COLUMN {old} TO {new}'))
+    return step
+
+
+def _add_column(table: str, column: str, kind: str):
+    """A migration step that adds a column if the table exists and doesn't have it yet."""
+    def step(conn) -> None:
+        columns = {row[1] for row in conn.execute(text(f'PRAGMA table_info("{table}")'))}
+        if columns and column not in columns:
+            conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {column} {kind}'))
+    return step
+
+
+def _when_table(table: str, statement: str):
+    """A migration step that runs ``statement`` only if ``table`` exists."""
+    def step(conn) -> None:
+        if conn.execute(text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:t"), {"t": table}).first():
+            conn.execute(text(statement))
     return step
 
 
@@ -60,6 +77,11 @@ MIGRATIONS: dict[int, list] = {
     ],
     9: [  # payments moved from Lemon Squeezy to Stripe
         _rename_column("user", "variant_id", "price_id"),
+    ],
+    10: [  # email verification (the emailverification table is created by create_all)
+        _add_column("user", "email_verified_at", "DATETIME"),
+        # accounts made before verification existed count as confirmed
+        _when_table("user", 'UPDATE "user" SET email_verified_at = created_at WHERE email_verified_at IS NULL'),
     ],
 }
 

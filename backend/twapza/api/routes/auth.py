@@ -14,14 +14,14 @@ from twapza.accounts import ratelimit
 from twapza.accounts.billing import BillingError
 from twapza.accounts.mail import send_email
 from twapza.accounts.passwords import hash_password, new_token, password_problem, token_hash, verify_password
-from twapza.accounts.users import account_read, create_user, delete_user, find_user, normalize_email
+from twapza.accounts.users import account_read, create_user, delete_user, find_user, is_verified, normalize_email
 from twapza.api.deps import COOKIE, current_user
 from twapza.api.schemas import (
     AccountRead, ChangePasswordRequest, DeleteAccountRequest, ForgotPasswordRequest, LoginRequest,
-    ResetPasswordRequest, SignupRequest,
+    ResetPasswordRequest, SignupRequest, VerifyEmailRequest,
 )
 from twapza.config import Settings, get_settings
-from twapza.db.models import AuthSession, PasswordReset, User, utcnow
+from twapza.db.models import AuthSession, EmailVerification, PasswordReset, User, utcnow
 from twapza.db.session import get_session
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 RESET_HOURS = 1
+VERIFY_HOURS = 48
 WRONG_LOGIN = "That email and password don't match an account."
 
 
@@ -39,6 +40,22 @@ def _start_session(response: Response, session: Session, user: User, settings: S
     session.commit()
     response.set_cookie(COOKIE, token, max_age=settings.session_days * 86400, httponly=True,
                         samesite="lax", secure=settings.public_url.startswith("https://"), path="/")
+
+
+def send_verification(session: Session, user: User, settings: Settings) -> None:
+    """Email a link that confirms the address (a new one each time; older links stay valid)."""
+    token, hashed = new_token()
+    session.add(EmailVerification(token_hash=hashed, user_id=user.id,
+                                  expires_at=utcnow() + timedelta(hours=VERIFY_HOURS)))
+    session.commit()
+    link = f"{settings.public_url.rstrip('/')}/verify-email?token={token}"
+    try:
+        send_email(user.email, "Confirm your email address for Twapza",
+                   f"Welcome to Twapza!\n\nConfirm your email address to start turning your videos into Shorts "
+                   f"(the link works for {VERIFY_HOURS} hours):\n{link}\n\n"
+                   f"Didn't create a Twapza account? Then you can ignore this email.")
+    except Exception:  # noqa: BLE001 - the account works; they can ask for a new email
+        log.exception("couldn't send the verification email")
 
 
 @router.post("/signup", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
@@ -55,7 +72,38 @@ def signup(body: SignupRequest, request: Request, response: Response,
                             "There is already an account with this email. Log in instead.")
     user = create_user(session, email, body.password, body.lang)
     _start_session(response, session, user, settings)
+    if settings.email_verification:
+        send_verification(session, user, settings)
     return account_read(session, user)
+
+
+@router.post("/verify-email", response_model=AccountRead)
+def verify_email(body: VerifyEmailRequest, response: Response, session: Session = Depends(get_session),
+                 settings: Settings = Depends(get_settings)) -> AccountRead:
+    """The link from the confirmation email. Also logs the person in on this device."""
+    link = session.get(EmailVerification, token_hash(body.token))
+    expires = link.expires_at.replace(tzinfo=link.expires_at.tzinfo or UTC) if link else None
+    user = session.get(User, link.user_id) if link else None
+    if link is None or user is None or expires <= utcnow():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "This confirmation link has expired or was already used. Log in to get a new one.")
+    if user.email_verified_at is None:
+        user.email_verified_at = utcnow()
+        session.add(user)
+    session.exec(delete(EmailVerification).where(EmailVerification.user_id == user.id))
+    session.commit()
+    _start_session(response, session, user, settings)
+    return account_read(session, user)
+
+
+@router.post("/resend-verification", status_code=status.HTTP_202_ACCEPTED)
+def resend_verification(user: User = Depends(current_user), session: Session = Depends(get_session),
+                        settings: Settings = Depends(get_settings)) -> dict:
+    if is_verified(user):
+        return {"ok": True, "already": True}
+    ratelimit.hit(f"verify:{user.id}", 3, 3600)
+    send_verification(session, user, settings)
+    return {"ok": True}
 
 
 @router.post("/login", response_model=AccountRead)
@@ -124,6 +172,8 @@ def reset_password(body: ResetPasswordRequest, response: Response, session: Sess
     if user is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account no longer exists.")
     user.password_hash = hash_password(body.password)
+    if user.email_verified_at is None:
+        user.email_verified_at = utcnow()  # the reset link reached their inbox
     reset.used = True
     session.add_all([user, reset])
     session.exec(delete(AuthSession).where(AuthSession.user_id == user.id))  # log out everywhere

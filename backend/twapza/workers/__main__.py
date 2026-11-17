@@ -6,11 +6,13 @@ from rq import Worker
 
 from twapza.config import get_settings
 from twapza.db.session import get_engine, init_db
+from twapza.monitoring import init_sentry
 from twapza.queue import get_queue, get_redis, with_priority
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    init_sentry("worker")
     init_db()
     # RQ forks a child per job; drop the parent's connections so each child
     # opens its own SQLite connections.

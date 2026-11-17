@@ -256,6 +256,10 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=1000)
 
 
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(max_length=200)
+
+
 class ForgotPasswordRequest(BaseModel):
     email: str = Field(max_length=254)
 
@@ -282,6 +286,7 @@ class PlanLimits(BaseModel):
     editing: bool
     zip: bool
     priority: bool
+    ai_per_day: int
 
 
 class UsageRead(BaseModel):
@@ -301,6 +306,7 @@ class SubscriptionRead(BaseModel):
 class AccountRead(BaseModel):
     id: str
     email: str
+    email_verified: bool
     lang: str
     created_at: datetime
     plan: PlanLimits

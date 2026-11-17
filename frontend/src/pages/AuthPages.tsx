@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type BillingPeriod, type PlanId } from "../api/client";
@@ -266,6 +266,53 @@ export function ResetPasswordPage() {
           {busy ? t("Saving…") : t("Save new password")}
         </button>
       </form>
+    </AuthCard>
+  );
+}
+
+/** The link from the "confirm your email address" email. */
+export function VerifyEmailPage() {
+  const t = useT();
+  const { setAccount } = useAuth();
+  const [params] = useSearchParams();
+  const [state, setState] = useState<"checking" | "done" | "failed">("checking");
+  const [error, setError] = useState<string | null>(null);
+  const token = params.get("token") ?? "";
+
+  useEffect(() => {
+    let active = true;
+    api
+      .verifyEmail(token)
+      .then((account) => {
+        if (!active) return;
+        setAccount(account);
+        setState("done");
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(message(err, t("Something went wrong. Please try again.")));
+        setState("failed");
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  if (state === "checking") return <AuthCard title={t("Confirming your email address…")}>{null}</AuthCard>;
+  if (state === "failed")
+    return (
+      <AuthCard title={t("This link didn't work")} subtitle={error ?? undefined}>
+        <Link to="/login?next=%2Fapp" className={`${primary} block text-center`}>
+          {t("Log in to get a new link")}
+        </Link>
+      </AuthCard>
+    );
+  return (
+    <AuthCard title={t("Your email address is confirmed")} subtitle={t("You're all set. Add your first video and let Twapza find the best moments.")}>
+      <Link to="/app" className={`${primary} block text-center`}>
+        {t("Add your first video")}
+      </Link>
     </AuthCard>
   );
 }

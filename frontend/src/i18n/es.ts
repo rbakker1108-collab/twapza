@@ -593,5 +593,16 @@ const messages: Record<string, string> = {
   // Payments (Creem)
   "Payments are handled by Creem, which sells as merchant of record. Prices exclude VAT/sales tax, which is added at checkout where it applies.": "Los pagos los gestiona Creem, que vende como merchant of record. Los precios no incluyen IVA/impuestos, que se añaden al pagar cuando corresponda.",
   "Switch to {plan} now? The price difference is charged right away.": "¿Cambiar a {plan} ahora? La diferencia de precio se cobra de inmediato.",
+  // Email confirmation, AI limit
+  "Add your first video": "Añade tu primer vídeo",
+  "Confirm your email address to add videos. We sent a link to {email}.": "Confirma tu correo electrónico para añadir vídeos. Enviamos un enlace a {email}.",
+  "Confirming your email address…": "Confirmando tu correo electrónico…",
+  "Log in to get a new link": "Inicia sesión para recibir un enlace nuevo",
+  "Send the email again": "Enviar el correo otra vez",
+  "Sent! Check your inbox (and spam folder).": "¡Enviado! Revisa tu bandeja de entrada (y el spam).",
+  "This link didn't work": "Este enlace no ha funcionado",
+  "Up to {n} AI requests per day (finding highlights, writing descriptions).": "Hasta {n} solicitudes de IA al día (buscar momentos destacados, escribir descripciones).",
+  "You're all set. Add your first video and let Twapza find the best moments.": "Todo listo. Añade tu primer vídeo y deja que Twapza encuentre los mejores momentos.",
+  "Your email address is confirmed": "Tu correo electrónico está confirmado",
 };
 export default messages;

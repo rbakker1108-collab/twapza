@@ -180,6 +180,8 @@ export type BillingPeriod = "monthly" | "yearly";
 export interface Account {
   id: string;
   email: string;
+  /** Confirmed through the link in the welcome email (needed to add videos). */
+  email_verified: boolean;
   lang: string;
   created_at: string;
   plan: {
@@ -191,6 +193,8 @@ export interface Account {
     editing: boolean;
     zip: boolean;
     priority: boolean;
+    /** AI requests (finding highlights, writing descriptions) per day. */
+    ai_per_day: number;
   };
   usage: { used_minutes: number; limit_minutes: number; resets_at: string };
   subscription: {
@@ -273,6 +277,8 @@ export const api = {
     request<Account>("/api/auth/signup", json({ email, password, lang })),
   login: (email: string, password: string) => request<Account>("/api/auth/login", json({ email, password })),
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  verifyEmail: (token: string) => request<Account>("/api/auth/verify-email", json({ token })),
+  resendVerification: () => request<{ ok: boolean }>("/api/auth/resend-verification", { method: "POST" }),
   forgotPassword: (email: string) => request<{ ok: boolean }>("/api/auth/forgot-password", json({ email })),
   resetPassword: (token: string, password: string) =>
     request<Account>("/api/auth/reset-password", json({ token, password })),

@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from rq import Queue
 from sqlmodel import Session, select
 
+from twapza.accounts import ratelimit
 from twapza.accounts.plans import NEEDS_CREATOR, NEEDS_PRO
 from twapza.accounts.usage import plan_of
 from twapza.api.deps import current_user
@@ -97,6 +98,7 @@ def create_ai_clips(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "AI highlights need a Claude API key. Add ANTHROPIC_API_KEY to your "
                             ".env file and restart Twapza.")
+    ratelimit.ai_daily(user.id, plan_of(user).ai_per_day)
     job = enqueue_job(session, with_priority(queue, plan_of(user).priority), project_id=project_id,
                       job_type=JobType.AI_CLIPS,
                       func=generate_ai_clips, short=bool(body and body.short),
@@ -334,6 +336,7 @@ def write_clip_description(
     _require_editing(user)
     if describer is None:
         return _description(project, clip)  # no API key: the simple description
+    ratelimit.ai_daily(user.id, plan_of(user).ai_per_day)
     prompt = user_prompt(clip_text=clip.text, clip_title=clip.title, clip_hook=clip.hook,
                          duration=clip.duration, credit=_credit(project))
     try:

@@ -142,6 +142,20 @@ docker compose exec twapza-api python -m twapza.users delete someone@example.com
 up backups of the `twapza-data` volume (the database now holds accounts), and publish terms and a
 privacy policy.
 
+## Monitoring and protection
+
+- **Claude costs.** Set a monthly spend limit in the Anthropic console (Settings → Limits). Inside
+  Twapza, each account can make a limited number of AI requests per day (finding highlights, writing
+  descriptions): Free 10, Creator 60, Pro 200 (`backend/twapza/accounts/plans.py`).
+- **Email confirmation.** New accounts must click the link in the welcome email before they can add
+  videos (`TWAPZA_EMAIL_VERIFICATION`, on by default; needs the SMTP settings).
+- **Uptime.** Point a free uptime monitor (e.g. UptimeRobot) at `https://<your domain>/api/health`. It
+  answers 200 when the API, database and job queue work, and 503 when one of them is down.
+- **Errors.** Create a free Sentry project (choose the EU region) or a GlitchTip project and put its DSN
+  in `TWAPZA_SENTRY_DSN`. Crashes in the API, workers and scheduler are then reported with technical
+  details only (no videos, request bodies or personal data). Expected problems, like a video that is
+  too long for the plan, are not reported.
+
 ## Going live on www.twapza.io
 
 `docker-compose.prod.yml` puts [Caddy](https://caddyserver.com/) in front of Twapza: it serves

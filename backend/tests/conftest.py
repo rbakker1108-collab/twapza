@@ -101,9 +101,21 @@ def set_plan(email: str, plan: str) -> None:
         session.commit()
 
 
-def signup(client, email: str, plan: str = "free"):
+def signup(client, email: str, plan: str = "free", verified: bool = True):
+    """Create an account (with its email confirmed, unless ``verified=False``) and log in."""
     r = client.post("/api/auth/signup", json={"email": email, "password": TEST_PASSWORD})
     assert r.status_code == 201, r.text
+    if verified:
+        from sqlmodel import Session
+
+        from twapza.accounts.users import find_user
+        from twapza.db.models import utcnow
+
+        with Session(get_engine()) as session:
+            user = find_user(session, email)
+            user.email_verified_at = utcnow()
+            session.add(user)
+            session.commit()
     if plan != "free":
         set_plan(email, plan)
     return r

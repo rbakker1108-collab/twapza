@@ -15,6 +15,7 @@ dependencies = [
     # YouTube link import. YouTube changes often: rebuild the image to pick up a newer yt-dlp.
     "yt-dlp[default]>=2025.11",  # [default] adds yt-dlp-ejs (YouTube signature solving)
     "deno>=2.0",                 # JavaScript runtime yt-dlp needs for YouTube
+    "sentry-sdk>=2.0",           # error reporting, only used when TWAPZA_SENTRY_DSN is set
 ]
 
 [project.optional-dependencies]

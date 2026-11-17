@@ -20,6 +20,7 @@ class Plan:
     #                cold open, AI descriptions and titles
     zip: bool  # download all clips at once
     priority: bool  # jobs go to the priority queue
+    ai_per_day: int  # Claude calls (finding highlights, writing descriptions/titles) per day
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -27,11 +28,11 @@ class Plan:
 
 PLANS: dict[str, Plan] = {
     "free": Plan("free", minutes=60, max_video_minutes=60, watermark=True, editing=False,
-                 zip=False, priority=False),
+                 zip=False, priority=False, ai_per_day=10),
     "creator": Plan("creator", minutes=300, max_video_minutes=120, watermark=False, editing=True,
-                    zip=False, priority=False),
+                    zip=False, priority=False, ai_per_day=60),
     "pro": Plan("pro", minutes=1200, max_video_minutes=180, watermark=False, editing=True,
-                zip=True, priority=True),
+                zip=True, priority=True, ai_per_day=200),
 }
 
 NEEDS_CREATOR = "This needs the Creator plan. Upgrade on your account page."

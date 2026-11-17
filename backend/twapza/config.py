@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     # login cookie Secure.
     public_url: str = "http://localhost:8080"
     session_days: int = 30
+    # New accounts must click a link in a confirmation email before they can add videos.
+    email_verification: bool = True
+    # Error reporting (Sentry or a compatible service such as GlitchTip). Empty = off.
+    sentry_dsn: str | None = None
+    sentry_environment: str = "production"
     # Reverse proxies in front of the API that add X-Forwarded-For (nginx = 1, Caddy + nginx = 2).
     trusted_proxy_hops: int = 1
     # Password-reset emails. Without an SMTP host the link is written to the API log instead.

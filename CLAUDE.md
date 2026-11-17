@@ -187,6 +187,17 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   (`accounts/users.delete_user`) cancels the subscription, deletes projects + files. Admin CLI:
   `python -m twapza.users list | set-plan EMAIL PLAN | delete EMAIL | clear-subscription EMAIL|--all` (`set-plan` =
   status `manual`; `clear-subscription` forgets payment-provider IDs, e.g. after moving from test to live mode).
+- **Email verification**: signup sends a 48 h link (`EmailVerification`, hashed token, permanent table) to
+  `/verify-email?token=` (`POST /api/auth/verify-email` confirms, deletes the user's links and logs that device in;
+  `POST /api/auth/resend-verification`, 3/hour). `User.email_verified_at`; uploads/imports need it
+  (`uploads.require_verified`, 403) unless `TWAPZA_EMAIL_VERIFICATION=false`; a password reset also confirms the
+  address; schema v10 marked existing accounts confirmed. `AccountRead.email_verified`; the app shows
+  `ConfirmEmailBanner` until then.
+- **Protection + monitoring**: `ratelimit.ai_daily` caps Claude-backed requests per account per UTC day
+  (`Plan.ai_per_day`: AI highlights runs + description writes; 429). `/api/health` checks the database and Redis
+  (503 when down) for uptime monitors. `monitoring.init_sentry(component)` (api/worker/scheduler) when
+  `TWAPZA_SENTRY_DSN` is set: no PII, no tracing. `queue.EXPECTED_ERRORS` (our readable error types) are logged as
+  warnings, everything else with `log.exception`, so only real bugs reach Sentry.
 - **Plans + limits** (`accounts/plans.py`, pure; `usage.py`): Free 60 min/month, videos ≤ 60 min, watermark;
   Creator 300 min, ≤ 120 min, `editing`; Pro 1200 min, ≤ 180 min, `zip`, `priority`. `effective_plan_id`
   (paid statuses active/trialing/past_due/scheduled_cancel/manual; a passed `ends_at` counts as ended), months run from

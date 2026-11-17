@@ -72,6 +72,7 @@ export function usePlan(): Account["plan"] {
       editing: true,
       zip: true,
       priority: false,
+      ai_per_day: 0,
     }
   );
 }

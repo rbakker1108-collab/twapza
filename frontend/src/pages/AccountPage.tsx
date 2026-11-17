@@ -106,7 +106,8 @@ export function AccountPage() {
           </div>
           <p className="mt-2 text-xs text-faint">
             {t("Resets on {date}. Videos up to {n} min on your plan.", {
-              date: date(account.usage.resets_at), n: account.plan.max_video_minutes })}
+              date: date(account.usage.resets_at), n: account.plan.max_video_minutes })}{" "}
+            {t("Up to {n} AI requests per day (finding highlights, writing descriptions).", { n: account.plan.ai_per_day })}
           </p>
         </div>
       </section>

@@ -10,7 +10,7 @@ from twapza.accounts.passwords import hash_password
 from twapza.accounts.usage import plan_of, usage_of
 from twapza.api.schemas import AccountRead, PlanLimits, SubscriptionRead, UsageRead
 from twapza.config import get_settings
-from twapza.db.models import AuthSession, Job, JobStatus, PasswordReset, Project, UsageEvent, User
+from twapza.db.models import AuthSession, EmailVerification, Job, JobStatus, PasswordReset, Project, UsageEvent, User
 from twapza.storage import get_storage
 
 log = logging.getLogger(__name__)
@@ -25,6 +25,11 @@ def normalize_email(email: str) -> str | None:
 
 def find_user(session: Session, email: str) -> User | None:
     return session.exec(select(User).where(User.email == email.strip().lower())).first()
+
+
+def is_verified(user: User) -> bool:
+    """Confirmed email, or verification switched off on this server."""
+    return user.email_verified_at is not None or not get_settings().email_verification
 
 
 def create_user(session: Session, email: str, password: str, lang: str = "en") -> User:
@@ -44,7 +49,7 @@ def account_read(session: Session, user: User) -> AccountRead:
         subscription = SubscriptionRead(plan=user.plan, period=user.period, status=user.subscription_status,
                                         renews_at=user.renews_at, ends_at=user.ends_at)
     return AccountRead(
-        id=user.id, email=user.email, lang=user.lang, created_at=user.created_at,
+        id=user.id, email=user.email, email_verified=is_verified(user), lang=user.lang, created_at=user.created_at,
         plan=PlanLimits(**plan.as_dict()),
         usage=UsageRead(used_minutes=round(usage.used_seconds / 60, 1),
                         limit_minutes=usage.limit_seconds / 60, resets_at=usage.period_end),
@@ -73,7 +78,7 @@ def delete_user(session: Session, user: User) -> None:
         session.commit()
         delete_project(session, storage, project)
         session.commit()
-    for table in (AuthSession, PasswordReset, UsageEvent):
+    for table in (AuthSession, PasswordReset, UsageEvent, EmailVerification):
         session.exec(delete(table).where(table.user_id == user.id))
     session.delete(user)
     session.commit()

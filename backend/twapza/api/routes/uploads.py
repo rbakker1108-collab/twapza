@@ -32,6 +32,15 @@ router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 RIGHTS_REQUIRED = "Please confirm that you own this video or have permission to use it."
 
 
+def require_verified(user: User) -> None:
+    """Adding videos needs a confirmed email address (keeps throwaway accounts from using free minutes)."""
+    from twapza.accounts.users import is_verified
+
+    if not is_verified(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Confirm your email address first: click the link in the email we sent you.")
+
+
 def require_minutes_left(session: Session, user: User) -> None:
     """Refuse new videos once this month's minutes are used up (the exact check runs at ingest)."""
     usage = usage_of(session, user)
@@ -68,6 +77,7 @@ def create_upload(
 ) -> UploadSession:
     if not body.rights_confirmed:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, RIGHTS_REQUIRED)
+    require_verified(user)
     require_minutes_left(session, user)
 
     filename = PurePath(body.filename.replace("\\", "/")).name

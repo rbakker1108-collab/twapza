@@ -39,3 +39,27 @@ def hit(key: str, limit: int, window_seconds: int) -> None:
     if count > limit:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
                             "Too many attempts. Wait a few minutes and try again.")
+
+
+def ai_daily(user_id: str, limit: int) -> None:
+    """Count one AI request (a Claude call paid by Twapza) for today; refuse past the plan's daily limit.
+
+    Keeps a single account from running up the Claude bill. Resets at midnight UTC.
+    """
+    from datetime import UTC, datetime
+
+    from twapza import queue as jobqueue
+
+    day = datetime.now(UTC).strftime("%Y-%m-%d")
+    try:
+        redis = jobqueue.get_redis()
+        name = f"twapza:ai:{user_id}:{day}"
+        count = redis.incr(name)
+        if count == 1:
+            redis.expire(name, 2 * 86400)
+    except Exception:  # Redis down: don't block the feature
+        log.warning("AI usage counter unavailable", exc_info=True)
+        return
+    if count > limit:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            f"You've reached today's limit of {limit} AI requests. It resets at midnight (UTC).")

@@ -205,6 +205,9 @@ class User(SQLModel, table=True):
     password_hash: str
     lang: str = "en"
     created_at: datetime = Field(default_factory=utcnow)
+    # When the person clicked the link in the confirmation email (None = not confirmed yet).
+    # Uploading and importing videos needs a confirmed address (stops throwaway accounts).
+    email_verified_at: datetime | None = None
     # Subscription, kept in sync by the Creem webhook (see accounts/billing.py).
     plan: str = "free"  # free | creator | pro (what they pay for; see accounts.plans.effective_plan)
     period: str | None = None  # monthly | yearly
@@ -226,6 +229,13 @@ class AuthSession(SQLModel, table=True):
     token_hash: str = Field(primary_key=True)
     user_id: str = Field(index=True)
     created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime
+
+
+class EmailVerification(SQLModel, table=True):
+    """A link in the "confirm your email address" email. Only the token's hash is stored."""
+    token_hash: str = Field(primary_key=True)
+    user_id: str = Field(index=True)
     expires_at: datetime
 
 

@@ -20,11 +20,12 @@ export const makeConfig = (over: Partial<PublicConfig> = {}): PublicConfig => ({
 });
 
 export const makeAccount = (plan: Account["plan"]["id"] = "free", over: Partial<Account> = {}): Account => ({
-  id: "u1", email: "ann@example.com", lang: "en", created_at: "2026-11-01T00:00:00Z",
+  id: "u1", email: "ann@example.com", email_verified: true, lang: "en", created_at: "2026-11-01T00:00:00Z",
   plan: {
     id: plan, minutes: plan === "pro" ? 1200 : plan === "creator" ? 300 : 60,
     max_video_minutes: plan === "pro" ? 180 : plan === "creator" ? 120 : 60,
     watermark: plan === "free", editing: plan !== "free", zip: plan === "pro", priority: plan === "pro",
+    ai_per_day: plan === "pro" ? 200 : plan === "creator" ? 60 : 10,
   },
   usage: { used_minutes: 12, limit_minutes: plan === "pro" ? 1200 : plan === "creator" ? 300 : 60, resets_at: "2026-12-01T00:00:00Z" },
   subscription: null, billing_enabled: true, ...over,

@@ -12,7 +12,7 @@ from sqlmodel import Session
 
 from twapza.accounts.usage import plan_of
 from twapza.api.deps import current_user
-from twapza.api.routes.uploads import RIGHTS_REQUIRED, require_minutes_left
+from twapza.api.routes.uploads import RIGHTS_REQUIRED, require_minutes_left, require_verified
 from twapza.api.schemas import CompleteUploadResponse, CreateImport, JobRead, ProjectRead
 from twapza.config import Settings, get_settings
 from twapza.db.models import JobType, Project, ProjectStatus, User, utcnow
@@ -43,6 +43,7 @@ def create_import(
     if video_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, NOT_A_VIDEO_LINK)
 
+    require_verified(user)
     require_minutes_left(session, user)
 
     url = canonical_url(video_id)

@@ -133,6 +133,7 @@ def test_password_reset(anon_client, monkeypatch):
     monkeypatch.setattr("twapza.api.routes.auth.send_email", lambda to, subject, body: sent.append((to, body)))
     c = anon_client
     signup(c, "ann@example.com")
+    sent.clear()  # the sign-up confirmation email
     other_device = c.cookies.get("twapza_session")
     c.post("/api/auth/logout")
 

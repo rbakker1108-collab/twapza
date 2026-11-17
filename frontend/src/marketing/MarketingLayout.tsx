@@ -8,6 +8,7 @@ import { msg, useT } from "../i18n";
 import { CONTACT_EMAIL } from "./legal/types";
 
 export const NAV = [
+  { to: "/how-it-works", label: msg("How it works") },
   { to: "/features", label: msg("Features") },
   { to: "/solutions", label: msg("Solutions") },
   { to: "/pricing", label: msg("Pricing") },

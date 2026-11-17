@@ -7,6 +7,7 @@ import { Logo } from "./components/Logo";
 import { useT } from "./i18n";
 import { FeaturesPage } from "./marketing/FeaturesPage";
 import { ComingSoonPage } from "./marketing/ComingSoonPage";
+import { HowItWorksPage } from "./marketing/HowItWorksPage";
 import { LandingPage } from "./marketing/LandingPage";
 import { PrivacyPage, TermsPage } from "./marketing/LegalPage";
 import { MarketingLayout } from "./marketing/MarketingLayout";
@@ -29,6 +30,7 @@ export function App() {
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/resources" element={<ResourcesPage />} />
         <Route path="/resources/:slug" element={<GuidePage />} />
+        <Route path="/how-it-works" element={<HowItWorksPage />} />
         <Route path="/coming-soon" element={<ComingSoonPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
@@ -64,6 +66,12 @@ function AppLayout() {
                 `rounded-lg px-3 py-1.5 transition ${isActive ? "bg-surface-2 text-ink" : "text-muted hover:text-ink"}`}
             >
               {t("Projects")}
+            </NavLink>
+            <NavLink
+              to="/how-it-works"
+              className="rounded-lg px-3 py-1.5 text-muted transition hover:text-ink"
+            >
+              {t("Help")}
             </NavLink>
           </nav>
           <div className="ms-auto flex items-center gap-3">

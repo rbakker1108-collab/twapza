@@ -27,7 +27,7 @@ export function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
               <PrimaryButton to="/signup">{t("Start for free")}</PrimaryButton>
-              <SecondaryButton to="/#how">{t("See how it works")}</SecondaryButton>
+              <SecondaryButton to="/how-it-works">{t("See how it works")}</SecondaryButton>
             </div>
             <p className="mt-4 text-sm text-faint">
               {t("No credit card needed · Captions in dozens of languages · Files deleted after 24 hours")}

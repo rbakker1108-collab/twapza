@@ -162,7 +162,10 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   change to them needs a migration. Move to Alembic (and Postgres) before real traffic.
 
 - **Website** (`frontend/src/marketing/`): `MarketingLayout` serves `/`, `/features`, `/solutions`,
-  `/pricing`, `/resources[/:slug]`, `/coming-soon` (`ComingSoonPage.tsx`: features in development + contact
+  `/pricing`, `/resources[/:slug]`, `/how-it-works` (`HowItWorksPage.tsx`: six steps with real screenshots and
+  muted, looping screen recordings in `public/how-it-works/`, made from a demo project with stand-ins for Whisper/Claude;
+  re-shoot them after big UI changes; videos play only while on screen and not with reduced motion; linked as "Help"
+  in the app header), `/coming-soon` (`ComingSoonPage.tsx`: features in development + contact
   `twapza@gmail.com`, `legal/types.CONTACT_EMAIL`), `/privacy` + `/terms` (`LegalPage.tsx`; texts are whole
   documents per language in `marketing/legal/{privacy,terms}.ts`, not `t()` keys; `legal.test.tsx` checks every
   language has the same structure; bump `LEGAL_UPDATED` when changing them, and keep the facts true to the app)

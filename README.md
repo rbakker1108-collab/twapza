@@ -130,7 +130,8 @@ of normal Stripe fees; check your Stripe dashboard for the current numbers. To s
 On your own computer, the Stripe CLI can forward webhooks without a public address:
 `stripe listen --forward-to localhost:8080/api/billing/webhook` (use the `whsec_…` it prints).
 To go live, repeat steps 3–5 with live keys (`sk_live_…`); test and live mode have separate
-products, prices and webhooks. Plan changes, cancelling, payment methods and invoices: the account
+products, prices and webhooks. Remove the test price IDs from `.env` first, and afterwards unlink accounts
+from their test subscriptions with `python -m twapza.users clear-subscription --all`. Plan changes, cancelling, payment methods and invoices: the account
 page ("Manage subscription" opens Stripe's customer portal).
 
 **Password-reset emails** need an SMTP service (`TWAPZA_SMTP_*`); without one the reset link is

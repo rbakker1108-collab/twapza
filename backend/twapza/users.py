@@ -4,6 +4,9 @@
   set-plan EMAIL PLAN          give an account a plan by hand (free | creator | pro), e.g. for
                                friends, testers or yourself; "free" removes a hand-set plan
   delete EMAIL                 delete the account and everything in it
+  clear-subscription EMAIL     forget the account's Stripe subscription and customer (back to Free),
+                               e.g. after switching from Stripe test mode to live mode
+  clear-subscription --all     the same for every account
 """
 
 import argparse
@@ -18,6 +21,12 @@ from twapza.db.models import User
 from twapza.db.session import get_engine, init_db
 
 
+def clear_subscription(user: User) -> None:
+    user.plan, user.period, user.subscription_status = "free", None, None
+    user.subscription_id = user.customer_id = user.price_id = None
+    user.renews_at = user.ends_at = user.subscription_updated_at = None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -27,6 +36,10 @@ def main(argv: list[str] | None = None) -> int:
     set_plan.add_argument("plan", choices=sorted(PLANS))
     remove = sub.add_parser("delete")
     remove.add_argument("email")
+    clear = sub.add_parser("clear-subscription")
+    target = clear.add_mutually_exclusive_group(required=True)
+    target.add_argument("email", nargs="?")
+    target.add_argument("--all", action="store_true")
     args = parser.parse_args(argv)
 
     init_db()
@@ -37,6 +50,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{user.email}\t{plan_of(user).id}\t{user.subscription_status or '-'}\t"
                       f"{usage.used_seconds / 60:.0f}/{usage.limit_seconds / 60:.0f} min\t"
                       f"since {user.created_at:%Y-%m-%d}")
+            return 0
+        if args.command == "clear-subscription":
+            users = list(session.exec(select(User))) if args.all else [find_user(session, args.email)]
+            if users == [None]:
+                print(f"No account with email {args.email}", file=sys.stderr)
+                return 1
+            for u in users:
+                if u.subscription_status == "manual":
+                    continue  # a plan given by hand stays
+                if u.subscription_id or u.customer_id:
+                    clear_subscription(u)
+                    session.add(u)
+                    print(f"{u.email}: subscription cleared, now on the free plan")
+            session.commit()
             return 0
         user = find_user(session, args.email)
         if user is None:

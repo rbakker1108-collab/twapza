@@ -185,7 +185,8 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `WaitlistEntry`) are **permanent** (`db/session.PERMANENT_TABLES`: kept by a schema reset, never touched by
   the retention cleanup; `cleanup_logins` drops expired sessions/reset tokens). Delete account
   (`accounts/users.delete_user`) cancels the subscription, deletes projects + files. Admin CLI:
-  `python -m twapza.users list | set-plan EMAIL PLAN | delete EMAIL` (`set-plan` = status `manual`).
+  `python -m twapza.users list | set-plan EMAIL PLAN | delete EMAIL | clear-subscription EMAIL|--all` (`set-plan` =
+  status `manual`; `clear-subscription` forgets Stripe IDs, e.g. after moving from test to live mode).
 - **Plans + limits** (`accounts/plans.py`, pure; `usage.py`): Free 60 min/month, videos ≤ 60 min, watermark;
   Creator 300 min, ≤ 120 min, `editing`; Pro 1200 min, ≤ 180 min, `zip`, `priority`. `effective_plan_id`
   (paid statuses active/trialing/past_due/manual; a passed `ends_at` counts as ended), months run from

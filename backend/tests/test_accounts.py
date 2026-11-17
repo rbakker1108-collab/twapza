@@ -693,3 +693,21 @@ def test_stripe_pages_follow_the_interface_language(free_client, fake_billing):
     assert [stripe_locale(x) for x in ("nl", "de", "ar", None, "xx")] == ["nl", "de", "en", "en", "en"]
     free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "yearly", "lang": "es"})
     assert fake_billing.checkouts[0]["lang"] == "es"
+
+
+def test_clear_subscription_after_switching_stripe_modes(free_client, fake_billing, capsys):
+    from twapza.users import main
+
+    fake_billing.subs["sub_1"] = subscription("price_cm")
+    send_webhook(free_client, "checkout.session.completed", checkout_completed(user("free@example.com").id))
+    assert free_client.get("/api/auth/me").json()["plan"]["id"] == "creator"
+    assert main(["clear-subscription", "free@example.com"]) == 0
+    u = user("free@example.com")
+    assert (u.plan, u.subscription_id, u.customer_id, u.subscription_status) == ("free", None, None, None)
+    assert free_client.get("/api/auth/me").json()["plan"]["id"] == "free"
+    assert free_client.get("/api/billing/portal").status_code == 404
+    # a new (live) checkout starts from a clean customer
+    free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "monthly"})
+    assert fake_billing.checkouts[-1]["user"].customer_id is None
+    assert main(["clear-subscription", "nobody@example.com"]) == 1
+    assert main(["clear-subscription", "--all"]) == 0

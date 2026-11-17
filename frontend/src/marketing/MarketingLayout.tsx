@@ -5,12 +5,14 @@ import { useAuth } from "../auth/AuthProvider";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { Logo } from "../components/Logo";
 import { msg, useT } from "../i18n";
+import { CONTACT_EMAIL } from "./legal/types";
 
 export const NAV = [
   { to: "/features", label: msg("Features") },
   { to: "/solutions", label: msg("Solutions") },
   { to: "/pricing", label: msg("Pricing") },
   { to: "/resources", label: msg("Resources") },
+  { to: "/coming-soon", label: msg("Coming soon") },
 ];
 
 /** Header, footer and scroll handling for the public website pages. */
@@ -104,7 +106,7 @@ export function MarketingLayout() {
       </main>
 
       <footer className="border-t border-line">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:grid-cols-[2fr_1fr_1fr]">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr]">
           <div className="space-y-3">
             <Logo />
             <p className="max-w-xs text-sm text-muted">
@@ -113,7 +115,7 @@ export function MarketingLayout() {
           </div>
           <div className="space-y-2 text-sm">
             <p className="font-medium text-ink">{t("Product")}</p>
-            {NAV.slice(0, 3).map((n) => (
+            {NAV.filter((n) => n.to !== "/resources").map((n) => (
               <Link key={n.to} to={n.to} className="block text-muted hover:text-ink">
                 {t(n.label)}
               </Link>
@@ -126,6 +128,18 @@ export function MarketingLayout() {
             </Link>
             <Link to="/#faq" className="block text-muted hover:text-ink">
               {t("FAQ")}
+            </Link>
+          </div>
+          <div className="space-y-2 text-sm">
+            <p className="font-medium text-ink">{t("Contact")}</p>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="block text-muted hover:text-ink">
+              {CONTACT_EMAIL}
+            </a>
+            <Link to="/privacy" className="block text-muted hover:text-ink">
+              {t("Privacy policy")}
+            </Link>
+            <Link to="/terms" className="block text-muted hover:text-ink">
+              {t("Terms of service")}
             </Link>
           </div>
         </div>

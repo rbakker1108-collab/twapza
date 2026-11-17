@@ -30,6 +30,14 @@ API = "https://api.stripe.com/v1"
 SIGNATURE_TOLERANCE = 300  # seconds; Stripe's own default
 
 
+# Twapza languages Stripe Checkout and the customer portal can show; others get English.
+STRIPE_LOCALES = {"en", "nl", "es", "de", "fr"}
+
+
+def stripe_locale(lang: str | None) -> str:
+    return lang if lang in STRIPE_LOCALES else "en"
+
+
 class BillingError(Exception):
     """A readable problem talking to Stripe."""
 
@@ -163,9 +171,11 @@ class Stripe:
                                else "The payment provider refused the request. Try again later.")
         return r.json() if r.content else {}
 
-    def create_checkout(self, *, price_id: str, user: User, success_url: str, cancel_url: str) -> str:
+    def create_checkout(self, *, price_id: str, user: User, success_url: str, cancel_url: str,
+                        lang: str = "en") -> str:
         params: dict = {
             "mode": "subscription",
+            "locale": stripe_locale(lang),
             "line_items": [{"price": price_id, "quantity": 1}],
             "client_reference_id": user.id,
             "metadata": {"user_id": user.id},
@@ -197,15 +207,16 @@ class Stripe:
     def get_subscription(self, subscription_id: str) -> dict:
         return self._request("GET", f"/subscriptions/{subscription_id}")
 
-    def portal(self, *, customer_id: str, return_url: str, flow: dict | None = None) -> str:
+    def portal(self, *, customer_id: str, return_url: str, flow: dict | None = None, lang: str = "en") -> str:
         params: dict = {"customer": customer_id, "return_url": return_url, "flow_data": flow,
-                        "configuration": self.portal_configuration}
+                        "configuration": self.portal_configuration, "locale": stripe_locale(lang)}
         url = self._request("POST", "/billing_portal/sessions", params).get("url")
         if not url:
             raise BillingError("The payment provider didn't return a portal link.")
         return url
 
-    def change_plan_url(self, *, subscription_id: str, customer_id: str, price_id: str, return_url: str) -> str:
+    def change_plan_url(self, *, subscription_id: str, customer_id: str, price_id: str, return_url: str,
+                        lang: str = "en") -> str:
         """A portal page where the customer confirms switching to ``price_id`` (Stripe prorates)."""
         item = first_item(self.get_subscription(subscription_id))
         if not item.get("id"):
@@ -220,7 +231,7 @@ class Stripe:
             },
             "after_completion": {"type": "redirect", "redirect": {"return_url": return_url}},
         }
-        return self.portal(customer_id=customer_id, return_url=return_url, flow=flow)
+        return self.portal(customer_id=customer_id, return_url=return_url, flow=flow, lang=lang)
 
     def cancel(self, subscription_id: str) -> None:
         """Cancel right away (used when an account is deleted)."""

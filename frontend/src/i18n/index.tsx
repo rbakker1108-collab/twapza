@@ -51,11 +51,7 @@ function detect(): Lang {
   } catch {
     /* storage blocked */
   }
-  const wanted = typeof navigator !== "undefined" ? navigator.languages ?? [navigator.language] : [];
-  for (const tag of wanted) {
-    const code = tag?.slice(0, 2).toLowerCase();
-    if (code && known.includes(code)) return code as Lang;
-  }
+  // English unless the visitor picked another language in the menu (not the browser's language).
   return "en";
 }
 

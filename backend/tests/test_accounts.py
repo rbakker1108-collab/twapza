@@ -468,7 +468,7 @@ def test_change_plan_and_portal(free_client, fake_billing):
     assert r.status_code == 200 and r.json()["url"].endswith("/confirm")
     (change,) = fake_billing.changes
     assert change == {"subscription_id": "sub_1", "customer_id": "cus_1", "price_id": "price_pm",
-                      "return_url": change["return_url"]}
+                      "return_url": change["return_url"], "lang": "en"}
     assert c.get("/api/billing/portal").json()["url"] == "https://billing.stripe.com/p/session/abc"
     assert fake_billing.portals[0]["customer_id"] == "cus_1"
 
@@ -538,6 +538,7 @@ def test_stripe_client_request_shape():
     assert form["managed_payments[enabled]"] == "true"
     assert form["client_reference_id"] == "u1" and form["subscription_data[metadata][user_id]"] == "u1"
     assert form["customer_email"] == "a@example.com" and "customer" not in form
+    assert form["locale"] == "en"
 
     stripe.change_plan_url(subscription_id="sub_1", customer_id="cus_1", price_id="price_py",
                            return_url="https://x/account")
@@ -684,3 +685,11 @@ def test_stripe_ids_ignore_text_pasted_onto_the_same_line(monkeypatch):
     assert s.stripe_portal_configuration == "bpc_123"
     assert s.prices == {("pro", "yearly"): "price_py"}
     get_settings.cache_clear()
+
+
+def test_stripe_pages_follow_the_interface_language(free_client, fake_billing):
+    from twapza.accounts.billing import stripe_locale
+
+    assert [stripe_locale(x) for x in ("nl", "de", "ar", None, "xx")] == ["nl", "de", "en", "en", "en"]
+    free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "yearly", "lang": "es"})
+    assert fake_billing.checkouts[0]["lang"] == "es"

@@ -279,12 +279,13 @@ export const api = {
   changePassword: (current_password: string, new_password: string) =>
     request<void>("/api/auth/change-password", json({ current_password, new_password })),
   deleteAccount: (password: string) => request<void>("/api/auth/delete-account", json({ password })),
-  checkout: (plan: PlanId, period: BillingPeriod) =>
-    request<{ url: string }>("/api/billing/checkout", json({ plan, period })),
+  /** `lang`: the interface language, so Stripe's pages match it. */
+  checkout: (plan: PlanId, period: BillingPeriod, lang = "en") =>
+    request<{ url: string }>("/api/billing/checkout", json({ plan, period, lang })),
   /** Stripe's page to confirm switching the subscription to another plan/period. */
-  changePlan: (plan: PlanId, period: BillingPeriod) =>
-    request<{ url: string }>("/api/billing/change-plan", json({ plan, period })),
-  billingPortal: () => request<{ url: string }>("/api/billing/portal"),
+  changePlan: (plan: PlanId, period: BillingPeriod, lang = "en") =>
+    request<{ url: string }>("/api/billing/change-plan", json({ plan, period, lang })),
+  billingPortal: (lang = "en") => request<{ url: string }>(`/api/billing/portal?lang=${encodeURIComponent(lang)}`),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),

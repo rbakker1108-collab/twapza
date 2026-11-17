@@ -74,7 +74,7 @@ def checkout(body: CheckoutRequest, user: User = Depends(current_user), session:
     try:
         url = billing.create_checkout(price_id=price, user=user,
                                       success_url=_account_url(settings, "?upgraded=1"),
-                                      cancel_url=_account_url(settings, "#plans"))
+                                      cancel_url=_account_url(settings, "#plans"), lang=body.lang)
     except BillingError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
     return UrlResponse(url=url)
@@ -107,21 +107,23 @@ def change_plan(body: CheckoutRequest, user: User = Depends(current_user), setti
         raise HTTPException(status.HTTP_409_CONFLICT, "That's already your plan.")
     try:
         url = billing.change_plan_url(subscription_id=user.subscription_id, customer_id=user.customer_id,
-                                      price_id=price, return_url=_account_url(settings, "?upgraded=1"))
+                                      price_id=price, return_url=_account_url(settings, "?upgraded=1"),
+                                      lang=body.lang)
     except BillingError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
     return UrlResponse(url=url)
 
 
 @router.get("/portal", response_model=UrlResponse)
-def portal(user: User = Depends(current_user), settings: Settings = Depends(get_settings),
+def portal(lang: str = "en", user: User = Depends(current_user), settings: Settings = Depends(get_settings),
            billing: Stripe | None = Depends(billing_client)) -> UrlResponse:
     """Stripe's customer portal: payment method, invoices, plan changes, cancel."""
     billing = _require(billing)
     if not user.customer_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "You don't have a subscription yet.")
     try:
-        return UrlResponse(url=billing.portal(customer_id=user.customer_id, return_url=_account_url(settings)))
+        return UrlResponse(url=billing.portal(customer_id=user.customer_id, return_url=_account_url(settings),
+                                              lang=lang))
     except BillingError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
 

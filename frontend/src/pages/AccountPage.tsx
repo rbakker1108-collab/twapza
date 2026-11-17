@@ -133,7 +133,7 @@ function SubscriptionLine({ account, date }: { account: Account; date: (iso: str
 }
 
 function PortalButton() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -146,7 +146,7 @@ function PortalButton() {
           setBusy(true);
           setError(null);
           try {
-            window.location.assign((await api.billingPortal()).url);
+            window.location.assign((await api.billingPortal(lang)).url);
           } catch (err) {
             setError(message(err));
             setBusy(false);
@@ -173,7 +173,7 @@ function PlanPicker({ account }: { account: Account }) {
     setBusy(plan);
     setError(null);
     try {
-      await choosePlan(account, plan, period); // goes to Stripe
+      await choosePlan(account, plan, period, lang); // goes to Stripe
     } catch (err) {
       setError(message(err));
     } finally {

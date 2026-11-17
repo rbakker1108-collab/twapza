@@ -79,7 +79,7 @@ describe("accounts", () => {
     await user.type(screen.getByLabelText("Password"), "secret password");
     await user.click(screen.getByRole("button", { name: "Create account and continue to payment" }));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://pay.example/checkout"));
-    expect(checkout).toHaveBeenCalledWith("pro", "monthly");
+    expect(checkout).toHaveBeenCalledWith("pro", "monthly", "en");
   });
 
   it("pricing buttons lead visitors to sign-up with the chosen plan", async () => {
@@ -115,7 +115,7 @@ describe("accounts", () => {
     expect(screen.getByText(/Renews on/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Manage subscription" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Switch to Pro" }));
-    await waitFor(() => expect(change).toHaveBeenCalledWith("pro", "yearly"));
+    await waitFor(() => expect(change).toHaveBeenCalledWith("pro", "yearly", "en"));
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://billing.stripe.example/confirm"));
   });
 

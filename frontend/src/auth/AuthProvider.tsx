@@ -84,9 +84,10 @@ export async function choosePlan(
   account: Account,
   plan: PlanId,
   period: BillingPeriod,
+  lang = "en",
 ): Promise<void> {
   const sub = account.subscription;
   const active = sub && sub.plan !== "free" && PAYING_STATUSES.includes(sub.status ?? "");
-  const { url } = active ? await api.changePlan(plan, period) : await api.checkout(plan, period);
+  const { url } = active ? await api.changePlan(plan, period, lang) : await api.checkout(plan, period, lang);
   window.location.assign(url);
 }

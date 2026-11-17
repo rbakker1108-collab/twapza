@@ -130,7 +130,7 @@ export function SignupPage() {
       setAccount(created);
       if (paid && created.billing_enabled) {
         try {
-          await choosePlan(created, plan, period); // goes to the checkout page
+          await choosePlan(created, plan, period, lang); // goes to the checkout page
           return;
         } catch {
           navigate("/account#plans", { replace: true });
@@ -171,6 +171,12 @@ export function SignupPage() {
           {busy ? t("Creating account…") : paid ? t("Create account and continue to payment") : t("Create free account")}
         </button>
         <p className="text-center text-xs text-faint">{t("Free plan: 60 minutes of video per month, no credit card needed.")}</p>
+        <p className="text-center text-xs text-faint">
+          {t("By creating an account, you agree to:")}{" "}
+          <Link to="/terms" className="text-muted underline-offset-2 hover:underline">{t("Terms of service")}</Link>
+          {" · "}
+          <Link to="/privacy" className="text-muted underline-offset-2 hover:underline">{t("Privacy policy")}</Link>
+        </p>
       </form>
     </AuthCard>
   );

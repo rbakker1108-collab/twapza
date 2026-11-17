@@ -45,7 +45,9 @@ def create_all(stripe: Stripe, public_url: str, currency: str = "usd") -> dict[s
         portal_products.append({"product": product["id"], "prices": price_ids})
 
     portal = stripe._request("POST", "/billing_portal/configurations", {
-        "business_profile": {"headline": "Twapza: manage your subscription"},
+        "business_profile": {"headline": "Twapza: manage your subscription",
+                             "privacy_policy_url": f"{public_url.rstrip('/')}/privacy",
+                             "terms_of_service_url": f"{public_url.rstrip('/')}/terms"},
         "default_return_url": f"{public_url.rstrip('/')}/account",
         "features": {
             "customer_update": {"enabled": True, "allowed_updates": ["email", "address", "tax_id"]},

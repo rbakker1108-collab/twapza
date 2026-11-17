@@ -6,7 +6,9 @@ import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { Logo } from "./components/Logo";
 import { useT } from "./i18n";
 import { FeaturesPage } from "./marketing/FeaturesPage";
+import { ComingSoonPage } from "./marketing/ComingSoonPage";
 import { LandingPage } from "./marketing/LandingPage";
+import { PrivacyPage, TermsPage } from "./marketing/LegalPage";
 import { MarketingLayout } from "./marketing/MarketingLayout";
 import { PricingPage } from "./marketing/PricingPage";
 import { GuidePage, ResourcesPage } from "./marketing/ResourcesPage";
@@ -27,6 +29,9 @@ export function App() {
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/resources" element={<ResourcesPage />} />
         <Route path="/resources/:slug" element={<GuidePage />} />
+        <Route path="/coming-soon" element={<ComingSoonPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -48,7 +53,7 @@ function AppLayout() {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-line bg-canvas/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-          <Link to="/app" aria-label="Twapza">
+          <Link to="/" aria-label={t("Twapza home page")}>
             <Logo />
           </Link>
           <nav className="hidden items-center gap-1 text-sm sm:flex">
@@ -94,6 +99,11 @@ function AppLayout() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-faint">
           <Link to="/" className="hover:text-ink">© {new Date().getFullYear()} Twapza</Link>
           <span>{t("Your videos are deleted automatically after 24 hours.")}</span>
+          <span className="flex gap-4">
+            <Link to="/coming-soon#contact" className="hover:text-ink">{t("Contact")}</Link>
+            <Link to="/privacy" className="hover:text-ink">{t("Privacy policy")}</Link>
+            <Link to="/terms" className="hover:text-ink">{t("Terms of service")}</Link>
+          </span>
         </div>
       </footer>
     </div>

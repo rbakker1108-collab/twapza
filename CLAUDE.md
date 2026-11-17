@@ -162,7 +162,11 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   change to them needs a migration. Move to Alembic (and Postgres) before real traffic.
 
 - **Website** (`frontend/src/marketing/`): `MarketingLayout` serves `/`, `/features`, `/solutions`,
-  `/pricing`, `/resources[/:slug]` and the auth pages (`/login`, `/signup[?plan=&period=]`,
+  `/pricing`, `/resources[/:slug]`, `/coming-soon` (`ComingSoonPage.tsx`: features in development + contact
+  `twapza@gmail.com`, `legal/types.CONTACT_EMAIL`), `/privacy` + `/terms` (`LegalPage.tsx`; texts are whole
+  documents per language in `marketing/legal/{privacy,terms}.ts`, not `t()` keys; `legal.test.tsx` checks every
+  language has the same structure; bump `LEGAL_UPDATED` when changing them, and keep the facts true to the app)
+  and the auth pages (`/login`, `/signup[?plan=&period=]`,
   `/forgot-password`, `/reset-password?token=`; `pages/AuthPages.tsx`); the app (`AppLayout`, wrapped in
   `RequireAuth`) lives at `/app`, `/projects/:id` and `/account`. Copy is in `content.ts` (steps, features,
   audiences, FAQ, guides), display prices/features in `plans.ts` (keep in sync with `accounts/plans.py`).
@@ -199,7 +203,8 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   against the stripe-python 17 SDK), form-encoded with `billing.encode` (`a[b][0]=…`). `POST
   /api/billing/checkout {plan, period}` → Checkout Session (`mode=subscription`, `managed_payments[enabled]`,
   `client_reference_id` + `subscription_data.metadata.user_id`, `customer` when known else `customer_email`;
-  success `/account?upgraded=1`, which polls `/me` until the subscription changes). `POST
+  success `/account?upgraded=1`, which polls `/me` until the subscription changes; `locale` = the interface
+  language via `billing.stripe_locale`, Arabic → English since Stripe has no Arabic; same for the portal). `POST
   /api/billing/change-plan` → URL of a portal `subscription_update_confirm` flow (Stripe prorates); `GET
   /api/billing/portal` → portal session (`TWAPZA_STRIPE_PORTAL_CONFIGURATION`). `POST /api/billing/webhook`
   verifies `Stripe-Signature` (`t=…,v1=` HMAC-SHA256 of `"{t}.{body}"`, 5 min tolerance), and for
@@ -293,7 +298,8 @@ and register it in `transcription/get_transcriber()` (selected by `TWAPZA_TRANSC
   Fonts are self-hosted (`@fontsource-variable/inter` + `noto-sans-arabic`; no Google Fonts: GDPR).
   Logo: `components/Logo.tsx` (= `public/favicon.svg`).
 - **Translations** (`src/i18n/`): every visible text is English wrapped in `t("…")` (from `useT()`/`useI18n()`),
-  or `msg("…")` for constants translated where shown; placeholders `{name}`. Add each new text to
+  or `msg("…")` for constants translated where shown; placeholders `{name}`. The interface starts in **English**;
+  only a language picked in the menu (`localStorage twapza.lang`) changes it (not the browser language). Add each new text to
   `nl/es/de/fr/ar.ts`: `i18n.test.ts` scans the source and fails on missing/unused keys or placeholder
   mismatches. Arabic is right-to-left (`<html dir="rtl">`): use logical utilities (`ms-/me-/ps-/pe-/start-/end-/
   text-start`), and keep video stages `dir="ltr"`. Backend progress messages are translated on the client

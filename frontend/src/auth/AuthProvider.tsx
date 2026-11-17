@@ -76,18 +76,20 @@ export function usePlan(): Account["plan"] {
   );
 }
 
-/** Start paying for a plan: a new Stripe Checkout, or Stripe's page to confirm switching the current subscription. */
-/** Stripe subscription statuses of someone who is (still) paying. */
-export const PAYING_STATUSES = ["active", "trialing", "past_due", "paused"];
+/** Creem subscription statuses of someone who is (still) paying. */
+export const PAYING_STATUSES = ["active", "trialing", "past_due", "scheduled_cancel", "paused"];
 
-export async function choosePlan(
-  account: Account,
-  plan: PlanId,
-  period: BillingPeriod,
-  lang = "en",
-): Promise<void> {
-  const sub = account.subscription;
-  const active = sub && sub.plan !== "free" && PAYING_STATUSES.includes(sub.status ?? "");
-  const { url } = active ? await api.changePlan(plan, period, lang) : await api.checkout(plan, period, lang);
+export const isPaying = (account: Account) =>
+  !!account.subscription && account.subscription.plan !== "free" && PAYING_STATUSES.includes(account.subscription.status ?? "");
+
+/**
+ * Start paying for a plan: a new Creem checkout (the page goes there and this returns null), or,
+ * for someone already paying, switch the subscription right away and return the updated account.
+ * Ask the person to confirm a switch before calling this: it charges the difference immediately.
+ */
+export async function choosePlan(account: Account, plan: PlanId, period: BillingPeriod): Promise<Account | null> {
+  if (isPaying(account)) return api.changePlan(plan, period);
+  const { url } = await api.checkout(plan, period);
   window.location.assign(url);
+  return null;
 }

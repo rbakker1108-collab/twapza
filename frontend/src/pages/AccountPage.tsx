@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, type Account, type BillingPeriod, type PlanId } from "../api/client";
-import { choosePlan, PAYING_STATUSES, useAuth } from "../auth/AuthProvider";
+import { choosePlan, isPaying, PAYING_STATUSES, useAuth } from "../auth/AuthProvider";
 import { useI18n } from "../i18n";
 import { PLANS, price } from "../marketing/plans";
 
@@ -25,7 +25,7 @@ export function AccountPage() {
   const startPlan = useRef(subscriptionKey(account));
   const [waiting, setWaiting] = useState(upgraded);
 
-  // Back from Stripe: the plan switches once Stripe's webhook arrives (seconds).
+  // Back from Creem: the plan switches once Creem's webhook arrives (seconds).
   useEffect(() => {
     if (!upgraded) return;
     let tries = 0;
@@ -111,7 +111,7 @@ export function AccountPage() {
         </div>
       </section>
 
-      <PlanPicker account={account} />
+      <PlanPicker account={account} onChange={setAccount} />
       <ChangePassword />
       <DeleteAccount onDeleted={() => { setAccount(null); navigate("/", { replace: true }); }} />
     </div>
@@ -133,7 +133,7 @@ function SubscriptionLine({ account, date }: { account: Account; date: (iso: str
 }
 
 function PortalButton() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -146,7 +146,7 @@ function PortalButton() {
           setBusy(true);
           setError(null);
           try {
-            window.location.assign((await api.billingPortal(lang)).url);
+            window.location.assign((await api.billingPortal()).url);
           } catch (err) {
             setError(message(err));
             setBusy(false);
@@ -161,7 +161,7 @@ function PortalButton() {
   );
 }
 
-function PlanPicker({ account }: { account: Account }) {
+function PlanPicker({ account, onChange }: { account: Account; onChange: (a: Account) => void }) {
   const { t, lang } = useI18n();
   const [period, setPeriod] = useState<BillingPeriod>(account.subscription?.period ?? "yearly");
   const [busy, setBusy] = useState<string | null>(null);
@@ -173,7 +173,12 @@ function PlanPicker({ account }: { account: Account }) {
     setBusy(plan);
     setError(null);
     try {
-      await choosePlan(account, plan, period, lang); // goes to Stripe
+      if (isPaying(account)) {
+        const name = t(PLANS.find((p) => p.id === plan)?.name ?? plan);
+        if (!window.confirm(t("Switch to {plan} now? The price difference is charged right away.", { plan: name }))) return;
+      }
+      const updated = await choosePlan(account, plan, period); // new subscription: goes to Creem
+      if (updated) onChange(updated);
     } catch (err) {
       setError(message(err));
     } finally {
@@ -227,7 +232,7 @@ function PlanPicker({ account }: { account: Account }) {
         })}
       </div>
       {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
-      <p className="mt-4 text-xs text-faint">{t("Payments are handled securely by Stripe. Prices exclude VAT/sales tax, which is added at checkout where it applies.")}</p>
+      <p className="mt-4 text-xs text-faint">{t("Payments are handled by Creem, which sells as merchant of record. Prices exclude VAT/sales tax, which is added at checkout where it applies.")}</p>
     </section>
   );
 }

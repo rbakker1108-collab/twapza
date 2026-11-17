@@ -312,7 +312,6 @@ class AccountRead(BaseModel):
 class CheckoutRequest(BaseModel):
     plan: Literal["creator", "pro"]
     period: Literal["monthly", "yearly"] = "yearly"
-    lang: Lang = "en"  # Twapza's interface language, used for Stripe's pages
 
 
 class UrlResponse(BaseModel):

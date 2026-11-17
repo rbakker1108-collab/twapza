@@ -1,6 +1,7 @@
 """Accounts: passwords, sessions, ownership, plan limits, usage and Lemon Squeezy billing."""
 
 import hashlib
+import hmac
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -314,33 +315,33 @@ def test_users_cli(client, capsys):
     assert client.get("/api/auth/me").status_code == 401
 
 
-# --- billing (Stripe) ----------------------------------------------------------------------
+# --- billing (Creem) -----------------------------------------------------------------------
 
-SECRET = "whsec_test"
-NOW = 1_780_000_000  # a fixed "now" for subscription times
+SECRET = "whsec_creem_test"
 
 
 @pytest.fixture
 def billing_env(monkeypatch):
-    for name, value in {"SECRET_KEY": "sk_test_123", "WEBHOOK_SECRET": SECRET,
-                        "PRICE_CREATOR_MONTHLY": "price_cm", "PRICE_CREATOR_YEARLY": "price_cy",
-                        "PRICE_PRO_MONTHLY": "price_pm", "PRICE_PRO_YEARLY": "price_py"}.items():
-        monkeypatch.setenv(f"TWAPZA_STRIPE_{name}", value)
+    for name, value in {"API_KEY": "creem_test_123", "WEBHOOK_SECRET": SECRET,
+                        "PRODUCT_CREATOR_MONTHLY": "prod_cm", "PRODUCT_CREATOR_YEARLY": "prod_cy",
+                        "PRODUCT_PRO_MONTHLY": "prod_pm", "PRODUCT_PRO_YEARLY": "prod_py"}.items():
+        monkeypatch.setenv(f"TWAPZA_CREEM_{name}", value)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
 
 
-def subscription(price="price_cm", status="active", sub_id="sub_1", **extra) -> dict:
-    return {"id": sub_id, "object": "subscription", "status": status, "customer": "cus_1",
-            "metadata": {}, "cancel_at_period_end": False, "cancel_at": None,
-            "billing_cycle_anchor": NOW - 86400, "start_date": NOW - 86400,
-            "items": {"data": [{"id": "si_1", "price": {"id": price},
-                                "current_period_end": NOW + 29 * 86400}]}} | extra
+def subscription(product="prod_cm", status="active", sub_id="sub_1", **extra) -> dict:
+    """A Creem subscription object (shape from docs.creem.io, products/customers expanded or not)."""
+    return {"id": sub_id, "object": "subscription", "status": status,
+            "product": {"id": product, "object": "product"}, "customer": "cust_1",
+            "current_period_start_date": "2026-11-10T09:00:00.000Z",
+            "current_period_end_date": "2026-12-10T09:00:00.000Z", "canceled_at": None,
+            "created_at": "2026-11-10T09:00:00.000Z", "metadata": {}} | extra
 
 
-class FakeStripe:
-    """Stands in for accounts.billing.Stripe; ``subs`` is what Stripe would return."""
+class FakeCreem:
+    """Stands in for accounts.billing.Creem; ``subs`` is what Creem would return."""
 
     def __init__(self):
         self.checkouts, self.changes, self.portals, self.cancelled = [], [], [], []
@@ -348,21 +349,22 @@ class FakeStripe:
 
     def create_checkout(self, **kwargs):
         self.checkouts.append(kwargs)
-        return "https://checkout.stripe.com/c/pay/cs_test_1"
+        return "https://creem.io/checkout/ch_test_1"
 
     def get_subscription(self, subscription_id):
         return self.subs[subscription_id]
 
-    def find_subscriptions(self, user_id):
-        return [s for s in reversed(list(self.subs.values())) if (s.get("metadata") or {}).get("user_id") == user_id]
+    def find_subscriptions(self, email):
+        return list(reversed(list(self.subs.values())))
 
-    def change_plan_url(self, **kwargs):
-        self.changes.append(kwargs)
-        return "https://billing.stripe.com/p/session/confirm"
+    def change_product(self, subscription_id, product_id):
+        self.changes.append((subscription_id, product_id))
+        self.subs[subscription_id] = self.subs[subscription_id] | {"product": product_id}
+        return self.subs[subscription_id]
 
-    def portal(self, **kwargs):
-        self.portals.append(kwargs)
-        return "https://billing.stripe.com/p/session/abc"
+    def portal(self, *, customer_id):
+        self.portals.append(customer_id)
+        return "https://creem.io/my-orders/login/xyz"
 
     def cancel(self, subscription_id):
         self.cancelled.append(subscription_id)
@@ -372,22 +374,23 @@ class FakeStripe:
 def fake_billing(app, billing_env):
     from twapza.api.routes.billing import billing_client
 
-    fake = FakeStripe()
+    fake = FakeCreem()
     app.dependency_overrides[billing_client] = lambda: fake
     return fake
 
 
-def send_webhook(c, event_type: str, obj: dict, secret=SECRET, timestamp: int | None = None):
+def send_webhook(c, event_type: str, obj: dict, secret=SECRET):
     from twapza.accounts.billing import sign
 
-    body = json.dumps({"id": "evt_1", "object": "event", "type": event_type, "data": {"object": obj}}).encode()
+    body = json.dumps({"id": "evt_1", "eventType": event_type, "created_at": 1794842156000, "object": obj}).encode()
     return c.post("/api/billing/webhook", content=body,
-                  headers={"Stripe-Signature": sign(body, secret, timestamp), "Content-Type": "application/json"})
+                  headers={"creem-signature": sign(body, secret), "Content-Type": "application/json"})
 
 
 def checkout_completed(user_id: str, sub_id="sub_1") -> dict:
-    return {"id": "cs_1", "object": "checkout.session", "mode": "subscription", "subscription": sub_id,
-            "customer": "cus_1", "client_reference_id": user_id, "metadata": {"user_id": user_id}}
+    return {"id": "ch_1", "object": "checkout", "request_id": user_id, "status": "completed",
+            "metadata": {"user_id": user_id}, "customer": {"id": "cust_1", "object": "customer"},
+            "subscription": {"id": sub_id, "object": "subscription", "metadata": {"user_id": user_id}}}
 
 
 def test_billing_not_configured(free_client):
@@ -398,10 +401,10 @@ def test_billing_not_configured(free_client):
 
 def test_checkout(free_client, fake_billing):
     r = free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "yearly"})
-    assert r.status_code == 200 and r.json()["url"].startswith("https://checkout.stripe.com/")
+    assert r.status_code == 200 and r.json()["url"].startswith("https://creem.io/")
     (call,) = fake_billing.checkouts
-    assert call["price_id"] == "price_py" and call["user"].email == "free@example.com"
-    assert call["success_url"].endswith("/account?upgraded=1") and call["cancel_url"].endswith("/account#plans")
+    assert call["product_id"] == "prod_py" and call["user"].email == "free@example.com"
+    assert call["success_url"].endswith("/account?upgraded=1")
     assert free_client.get("/api/config").json()["billing_plans"] == [
         "creator_monthly", "creator_yearly", "pro_monthly", "pro_yearly"]
 
@@ -409,171 +412,213 @@ def test_checkout(free_client, fake_billing):
 def test_webhook_lifecycle(free_client, fake_billing):
     c = free_client
     uid = user("free@example.com").id
-    fake_billing.subs["sub_1"] = subscription("price_cm")
-    assert send_webhook(c, "checkout.session.completed", checkout_completed(uid), secret="whsec_wrong").status_code == 400
+    fake_billing.subs["sub_1"] = subscription("prod_cm")
+    assert send_webhook(c, "checkout.completed", checkout_completed(uid), secret="wrong").status_code == 401
     assert c.get("/api/auth/me").json()["plan"]["id"] == "free"
 
-    assert send_webhook(c, "checkout.session.completed", checkout_completed(uid)).status_code == 200
+    assert send_webhook(c, "checkout.completed", checkout_completed(uid)).status_code == 200
     me = c.get("/api/auth/me").json()
     assert me["plan"]["id"] == "creator" and me["usage"]["limit_minutes"] == 300
     assert me["subscription"]["period"] == "monthly" and me["subscription"]["status"] == "active"
-    assert me["subscription"]["renews_at"] and me["subscription"]["ends_at"] is None
+    assert me["subscription"]["renews_at"].startswith("2026-12-10") and me["subscription"]["ends_at"] is None
+    assert me["usage"]["resets_at"].startswith("2026-") and "-10T09:00" in me["usage"]["resets_at"]
 
-    # Events carry stale data and may arrive in any order: we always read the subscription fresh.
-    fake_billing.subs["sub_1"] = subscription("price_py")
-    send_webhook(c, "customer.subscription.updated", subscription("price_cm"))  # old payload
+    # events carry stale data and may arrive in any order: we always read the subscription fresh
+    fake_billing.subs["sub_1"] = subscription("prod_py")
+    send_webhook(c, "subscription.update", subscription("prod_cm"))
     me = c.get("/api/auth/me").json()
     assert me["plan"]["id"] == "pro" and me["subscription"]["period"] == "yearly"
 
-    # Cancelled at period end: still Pro, with an end date
-    ends = NOW + 20 * 86400
-    fake_billing.subs["sub_1"] = subscription("price_py", cancel_at_period_end=True, cancel_at=ends)
-    send_webhook(c, "customer.subscription.updated", fake_billing.subs["sub_1"])
+    # cancelled at period end: Pro stays, with an end date (as long as that date hasn't passed)
+    fake_billing.subs["sub_1"] = subscription("prod_py", status="scheduled_cancel",
+                                              current_period_end_date="2099-01-01T00:00:00.000Z")
+    send_webhook(c, "subscription.scheduled_cancel", fake_billing.subs["sub_1"])
     me = c.get("/api/auth/me").json()
-    assert me["subscription"]["ends_at"] and me["subscription"]["renews_at"] is None
-    # (NOW is in 2026, so that end date has passed by the time these tests run in later years;
-    # the plan check below only uses the status)
-    fake_billing.subs["sub_1"] = subscription("price_py", status="canceled")
-    send_webhook(c, "customer.subscription.deleted", fake_billing.subs["sub_1"])
+    assert me["plan"]["id"] == "pro" and me["subscription"]["ends_at"].startswith("2099")
+    assert me["subscription"]["renews_at"] is None
+    fake_billing.subs["sub_1"] = subscription("prod_py", status="canceled")
+    send_webhook(c, "subscription.canceled", fake_billing.subs["sub_1"])
     me = c.get("/api/auth/me").json()
     assert me["plan"]["id"] == "free" and me["subscription"]["status"] == "canceled"
 
-    # payment trouble keeps the plan while Stripe retries
-    fake_billing.subs["sub_2"] = subscription("price_cm", sub_id="sub_2", status="past_due")
-    send_webhook(c, "customer.subscription.updated", fake_billing.subs["sub_2"] | {"metadata": {"user_id": uid}})
+    # payment trouble keeps the plan while Creem retries; found by metadata
+    fake_billing.subs["sub_2"] = subscription("prod_cm", sub_id="sub_2", status="past_due", metadata={"user_id": uid})
+    send_webhook(c, "subscription.past_due", fake_billing.subs["sub_2"])
     assert c.get("/api/auth/me").json()["plan"]["id"] == "creator"
+    fake_billing.subs["sub_2"] = fake_billing.subs["sub_2"] | {"status": "unpaid"}
+    send_webhook(c, "subscription.unpaid", fake_billing.subs["sub_2"])
+    assert c.get("/api/auth/me").json()["plan"]["id"] == "free"
 
 
-def test_webhook_ignores_other_events_and_unknown_prices(free_client, fake_billing):
+def test_webhook_ignores_other_events_and_unknown_products(free_client, fake_billing):
     c = free_client
     uid = user("free@example.com").id
-    assert send_webhook(c, "invoice.paid", {"id": "in_1"}).json()["ignored"] == "invoice.paid"
-    assert send_webhook(c, "checkout.session.completed", {"mode": "payment", "client_reference_id": uid}).status_code == 200
-    fake_billing.subs["sub_9"] = subscription("price_someone_else", sub_id="sub_9")
-    send_webhook(c, "checkout.session.completed", checkout_completed(uid, "sub_9"))
+    assert send_webhook(c, "refund.created", {"id": "ref_1"}).json()["ignored"] == "refund.created"
+    one_time = {"id": "ch_2", "object": "checkout", "metadata": {"user_id": uid}, "subscription": None}
+    assert send_webhook(c, "checkout.completed", one_time).json()["ignored"] == "not a subscription checkout"
+    fake_billing.subs["sub_9"] = subscription("prod_someone_else", sub_id="sub_9")
+    send_webhook(c, "checkout.completed", checkout_completed(uid, "sub_9"))
     assert c.get("/api/auth/me").json()["plan"]["id"] == "free"
-    # an old, replayed event is refused
-    old = send_webhook(c, "checkout.session.completed", checkout_completed(uid), timestamp=1_600_000_000)
-    assert old.status_code == 400
 
 
 def test_change_plan_and_portal(free_client, fake_billing):
     c = free_client
     assert c.post("/api/billing/change-plan", json={"plan": "pro", "period": "monthly"}).status_code == 409
     assert c.get("/api/billing/portal").status_code == 404
-    fake_billing.subs["sub_1"] = subscription("price_cm")
-    send_webhook(c, "checkout.session.completed", checkout_completed(user("free@example.com").id))
+    fake_billing.subs["sub_1"] = subscription("prod_cm")
+    send_webhook(c, "checkout.completed", checkout_completed(user("free@example.com").id))
     assert c.post("/api/billing/checkout", json={"plan": "pro", "period": "monthly"}).status_code == 409
+    same = c.post("/api/billing/change-plan", json={"plan": "creator", "period": "monthly"})
+    assert same.status_code == 409 and same.json()["detail"] == "That's already your plan."
     r = c.post("/api/billing/change-plan", json={"plan": "pro", "period": "monthly"})
-    assert r.status_code == 200 and r.json()["url"].endswith("/confirm")
-    (change,) = fake_billing.changes
-    assert change == {"subscription_id": "sub_1", "customer_id": "cus_1", "price_id": "price_pm",
-                      "return_url": change["return_url"], "lang": "en"}
-    assert c.get("/api/billing/portal").json()["url"] == "https://billing.stripe.com/p/session/abc"
-    assert fake_billing.portals[0]["customer_id"] == "cus_1"
+    assert r.status_code == 200 and r.json()["plan"]["id"] == "pro"  # applied straight away
+    assert fake_billing.changes == [("sub_1", "prod_pm")]
+    assert c.get("/api/billing/portal").json()["url"] == "https://creem.io/my-orders/login/xyz"
+    assert fake_billing.portals == ["cust_1"]
 
 
 def test_delete_account_cancels_subscription(free_client, fake_billing, monkeypatch):
     c = free_client
-    fake_billing.subs["sub_1"] = subscription("price_cm")
-    send_webhook(c, "checkout.session.completed", checkout_completed(user("free@example.com").id))
+    fake_billing.subs["sub_1"] = subscription("prod_cm")
+    send_webhook(c, "checkout.completed", checkout_completed(user("free@example.com").id))
     monkeypatch.setattr("twapza.accounts.users.get_billing", lambda settings: fake_billing)
     assert c.post("/api/auth/delete-account", json={"password": TEST_PASSWORD}).status_code == 204
     assert fake_billing.cancelled == ["sub_1"]
 
 
+def test_checkout_finds_a_payment_the_webhook_missed(free_client, fake_billing):
+    """Paid, but the webhook never arrived: buying again is refused and the account catches up."""
+    c = free_client
+    uid = user("free@example.com").id
+    fake_billing.subs["sub_old"] = subscription("prod_pm", sub_id="sub_old", status="canceled", metadata={"user_id": uid})
+    fake_billing.subs["sub_lost"] = subscription("prod_cy", sub_id="sub_lost", metadata={"user_id": uid})
+    r = c.post("/api/billing/checkout", json={"plan": "creator", "period": "yearly"})
+    assert r.status_code == 409 and fake_billing.checkouts == []
+    me = c.get("/api/auth/me").json()
+    assert me["plan"]["id"] == "creator" and me["subscription"]["period"] == "yearly"
+
+
+def test_checkout_goes_ahead_when_only_ended_or_foreign_subscriptions_exist(free_client, fake_billing):
+    uid = user("free@example.com").id
+    fake_billing.subs["sub_old"] = subscription("prod_cm", sub_id="sub_old", status="canceled", metadata={"user_id": uid})
+    fake_billing.subs["sub_other"] = subscription("prod_pm", sub_id="sub_other", metadata={"user_id": "someone-else"})
+    assert free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "monthly"}).status_code == 200
+
+
 def test_signature_check():
     from twapza.accounts.billing import sign, verify_signature
 
-    body = b'{"a":1}'
-    header = sign(body, "whsec_x", timestamp=1000)
-    assert verify_signature(body, header, "whsec_x", now=1100)
-    assert not verify_signature(body, header, "whsec_x", now=1000 + 301)  # too old
-    assert not verify_signature(body + b" ", header, "whsec_x", now=1100)
-    assert not verify_signature(body, header, "whsec_other", now=1100)
-    assert not verify_signature(body, header, "", now=1100)
-    assert not verify_signature(body, None, "whsec_x", now=1100)
-    assert not verify_signature(body, "t=abc,v1=00", "whsec_x", now=1100)
-    # Stripe may send several v1 signatures while a secret is being rolled
-    assert verify_signature(body, f"{header},v1=deadbeef", "whsec_x", now=1100)
+    body = b'{"eventType":"checkout.completed"}'
+    sig = sign(body, "whsec_x")
+    assert sig == hmac.new(b"whsec_x", body, hashlib.sha256).hexdigest()
+    assert verify_signature(body, sig, "whsec_x")
+    assert not verify_signature(body + b" ", sig, "whsec_x")
+    assert not verify_signature(body, sig, "whsec_other")
+    assert not verify_signature(body, sig, "")
+    assert not verify_signature(body, None, "whsec_x")
 
 
-def test_stripe_form_encoding():
-    from twapza.accounts.billing import encode
-
-    assert encode({"mode": "subscription", "line_items": [{"price": "p", "quantity": 1}],
-                   "managed_payments": {"enabled": True}, "skip": None, "list": ["a", "b"]}) == [
-        ("mode", "subscription"), ("line_items[0][price]", "p"), ("line_items[0][quantity]", "1"),
-        ("managed_payments[enabled]", "true"), ("list[0]", "a"), ("list[1]", "b")]
-
-
-def test_stripe_client_request_shape():
+def test_creem_client_request_shape():
     import httpx
-    from urllib.parse import parse_qsl
 
-    from twapza.accounts.billing import Stripe
+    from twapza.accounts.billing import BillingError, Creem
 
     seen = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        if request.url.path.endswith("/checkout/sessions"):
-            return httpx.Response(200, json={"url": "https://checkout.stripe.com/c/pay/cs_1"})
-        if request.url.path.endswith("/subscriptions/sub_1"):
+        path = request.url.path
+        if path == "/v1/checkouts":
+            return httpx.Response(200, json={"id": "ch_1", "checkout_url": "https://creem.io/checkout/ch_1"})
+        if path == "/v1/subscriptions":
             return httpx.Response(200, json=subscription())
-        return httpx.Response(200, json={"url": "https://billing.stripe.com/p/session/x"})
+        if path == "/v1/subscriptions/sub_1/upgrade":
+            return httpx.Response(200, json=subscription("prod_py"))
+        if path == "/v1/customers/billing":
+            return httpx.Response(200, json={"customer_portal_link": "https://creem.io/portal/x"})
+        if path == "/v1/customers":
+            return httpx.Response(200, json={"id": "cust_1", "object": "customer"})
+        if path == "/v1/customers/cust_1/subscriptions":
+            return httpx.Response(200, json={"items": [subscription(sub_id="a", created_at="2026-01-01"),
+                                                       subscription(sub_id="b", created_at="2026-06-01")]})
+        if path == "/v1/subscriptions/sub_1/cancel":
+            return httpx.Response(200, json=subscription(status="canceled"))
+        return httpx.Response(400, json={"message": ["product_id should not be empty"]})
 
-    stripe = Stripe("sk_test_1", api_version="2026-10-28.endive", portal_configuration="bpc_1",
-                    transport=httpx.MockTransport(handler))
+    creem = Creem("creem_test_abc", transport=httpx.MockTransport(handler))
     u = User(id="u1", email="a@example.com", password_hash="x")
-    url = stripe.create_checkout(price_id="price_cm", user=u, success_url="https://x/account?upgraded=1",
-                                 cancel_url="https://x/account#plans")
-    assert url == "https://checkout.stripe.com/c/pay/cs_1"
+    assert creem.create_checkout(product_id="prod_cm", user=u, success_url="https://x/account?upgraded=1") \
+        == "https://creem.io/checkout/ch_1"
     req = seen[0]
-    assert req.url == "https://api.stripe.com/v1/checkout/sessions" and req.method == "POST"
-    assert req.headers["authorization"] == "Bearer sk_test_1"
-    assert req.headers["stripe-version"] == "2026-10-28.endive"
-    form = dict(parse_qsl(req.content.decode()))
-    assert form["mode"] == "subscription" and form["line_items[0][price]"] == "price_cm"
-    assert form["managed_payments[enabled]"] == "true"
-    assert form["client_reference_id"] == "u1" and form["subscription_data[metadata][user_id]"] == "u1"
-    assert form["customer_email"] == "a@example.com" and "customer" not in form
-    assert form["locale"] == "en"
+    assert str(req.url) == "https://test-api.creem.io/v1/checkouts" and req.method == "POST"
+    assert req.headers["x-api-key"] == "creem_test_abc"
+    assert json.loads(req.content) == {"product_id": "prod_cm", "request_id": "u1", "customer": {"email": "a@example.com"},
+                                       "success_url": "https://x/account?upgraded=1", "metadata": {"user_id": "u1"}}
+    u.customer_id = "cust_1"
+    creem.create_checkout(product_id="prod_cm", user=u, success_url="s")
+    assert json.loads(seen[-1].content)["customer"] == {"id": "cust_1"}
 
-    stripe.change_plan_url(subscription_id="sub_1", customer_id="cus_1", price_id="price_py",
-                           return_url="https://x/account")
-    portal = dict(parse_qsl(seen[-1].content.decode()))
-    assert seen[-1].url.path == "/v1/billing_portal/sessions"
-    assert portal["flow_data[type]"] == "subscription_update_confirm"
-    assert portal["flow_data[subscription_update_confirm][items][0][id]"] == "si_1"
-    assert portal["flow_data[subscription_update_confirm][items][0][price]"] == "price_py"
-    assert portal["configuration"] == "bpc_1" and portal["customer"] == "cus_1"
+    assert creem.get_subscription("sub_1")["id"] == "sub_1"
+    assert seen[-1].url.params["subscription_id"] == "sub_1"
+    creem.change_product("sub_1", "prod_py")
+    assert json.loads(seen[-1].content) == {"product_id": "prod_py", "update_behavior": "proration-charge-immediately"}
+    assert creem.portal(customer_id="cust_1") == "https://creem.io/portal/x"
+    assert [s["id"] for s in creem.find_subscriptions("a@example.com")] == ["b", "a"]
+    assert seen[-2].url.params["email"] == "a@example.com"
+    creem.cancel("sub_1")
+    assert json.loads(seen[-1].content) == {"mode": "immediate"}
+    with pytest.raises(BillingError, match="product_id should not be empty"):
+        creem._request("POST", "/v1/unknown", json={})
+    # live keys go to the live API
+    live = []
+    Creem("creem_live_key", transport=httpx.MockTransport(lambda r: live.append(r) or httpx.Response(200, json={})))._request("GET", "/v1/x")
+    assert str(live[0].url).startswith("https://api.creem.io/")
 
 
-def test_stripe_setup_creates_products_prices_and_portal():
+def test_creem_setup_creates_four_products():
     import httpx
-    from urllib.parse import parse_qsl
 
-    from twapza.accounts.billing import Stripe
-    from twapza.stripe_setup import create_all
+    from twapza.accounts.billing import Creem
+    from twapza.creem_setup import create_all
 
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        calls.append((request.url.path, dict(parse_qsl(request.content.decode()))))
-        return httpx.Response(200, json={"id": f"obj_{len(calls)}"})
+        calls.append(request)
+        return httpx.Response(200, json={"id": f"prod_{len(calls)}"})
 
-    env = create_all(Stripe("sk_test_1", api_version="v", transport=httpx.MockTransport(handler)), "https://www.twapza.io")
-    assert set(env) == {"TWAPZA_STRIPE_PRICE_CREATOR_MONTHLY", "TWAPZA_STRIPE_PRICE_CREATOR_YEARLY",
-                        "TWAPZA_STRIPE_PRICE_PRO_MONTHLY", "TWAPZA_STRIPE_PRICE_PRO_YEARLY",
-                        "TWAPZA_STRIPE_PORTAL_CONFIGURATION"}
-    prices = [form for path, form in calls if path == "/v1/prices"]
-    assert [(p["unit_amount"], p["recurring[interval]"]) for p in prices] == [
-        ("1500", "month"), ("14400", "year"), ("2900", "month"), ("27600", "year")]
-    portal = calls[-1][1]
-    assert calls[-1][0] == "/v1/billing_portal/configurations"
-    assert portal["features[subscription_update][enabled]"] == "true"
-    assert portal["default_return_url"] == "https://www.twapza.io/account"
+    env = create_all(Creem("creem_test_1", transport=httpx.MockTransport(handler)), "https://www.twapza.io")
+    assert env == {"TWAPZA_CREEM_PRODUCT_CREATOR_MONTHLY": "prod_1", "TWAPZA_CREEM_PRODUCT_CREATOR_YEARLY": "prod_2",
+                   "TWAPZA_CREEM_PRODUCT_PRO_MONTHLY": "prod_3", "TWAPZA_CREEM_PRODUCT_PRO_YEARLY": "prod_4"}
+    bodies = [json.loads(r.content) for r in calls]
+    assert [(b["price"], b["billing_period"]) for b in bodies] == [
+        (1500, "every-month"), (14400, "every-year"), (2900, "every-month"), (27600, "every-year")]
+    assert all(b["billing_type"] == "recurring" and b["tax_mode"] == "exclusive" and b["tax_category"] == "saas"
+               and b["currency"] == "USD" for b in bodies)
+    assert [r.headers["idempotency-key"] for r in calls] == [
+        "twapza_creator_monthly", "twapza_creator_yearly", "twapza_pro_monthly", "twapza_pro_yearly"]
+
+
+def test_product_ids_ignore_text_pasted_onto_the_same_line(monkeypatch):
+    monkeypatch.setenv("TWAPZA_CREEM_PRODUCT_PRO_YEARLY", "prod_py# low | medium | high (more tokens)")
+    monkeypatch.setenv("TWAPZA_CREEM_PRODUCT_PRO_MONTHLY", "")
+    get_settings.cache_clear()
+    assert get_settings().prices == {("pro", "yearly"): "prod_py"}
+    get_settings.cache_clear()
+
+
+def test_clear_subscription_after_switching_modes(free_client, fake_billing):
+    from twapza.users import main
+
+    fake_billing.subs["sub_1"] = subscription("prod_cm")
+    send_webhook(free_client, "checkout.completed", checkout_completed(user("free@example.com").id))
+    assert free_client.get("/api/auth/me").json()["plan"]["id"] == "creator"
+    assert main(["clear-subscription", "free@example.com"]) == 0
+    u = user("free@example.com")
+    assert (u.plan, u.subscription_id, u.customer_id, u.subscription_status) == ("free", None, None, None)
+    assert free_client.get("/api/billing/portal").status_code == 404
+    assert main(["clear-subscription", "nobody@example.com"]) == 1
+    assert main(["clear-subscription", "--all"]) == 0
 
 
 def test_client_ip_counts_only_our_proxies(monkeypatch):
@@ -595,8 +640,8 @@ def test_client_ip_counts_only_our_proxies(monkeypatch):
     get_settings.cache_clear()
 
 
-def test_accounts_survive_the_move_to_stripe(isolated_env):
-    """A v8 database (Lemon Squeezy era) keeps its accounts; variant_id becomes price_id."""
+def test_accounts_survive_the_v9_migration(isolated_env):
+    """A v8 database (Lemon Squeezy era, before Stripe/Creem) keeps its accounts; variant_id becomes price_id."""
     from sqlalchemy import text
 
     from twapza.db.session import SCHEMA_VERSION, init_db
@@ -613,101 +658,3 @@ def test_accounts_survive_the_move_to_stripe(isolated_env):
         assert u is not None and u.price_id == "123" and u.plan == "pro"
     with engine.connect() as conn:
         assert conn.execute(text("PRAGMA user_version")).scalar() == SCHEMA_VERSION
-
-
-def test_change_to_the_current_plan_is_refused_with_a_clear_message(free_client, fake_billing):
-    c = free_client
-    fake_billing.subs["sub_1"] = subscription("price_cy")
-    send_webhook(c, "checkout.session.completed", checkout_completed(user("free@example.com").id))
-    r = c.post("/api/billing/change-plan", json={"plan": "creator", "period": "yearly"})
-    assert r.status_code == 409 and r.json()["detail"] == "That's already your plan."
-    assert fake_billing.changes == []
-
-
-def test_stripe_errors_explain_the_reason():
-    import httpx
-
-    from twapza.accounts.billing import BillingError, Stripe
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/subscriptions/sub_1"):
-            return httpx.Response(200, json=subscription("price_cy"))
-        return httpx.Response(400, json={"error": {"type": "invalid_request_error", "message": "No such price: 'x'"}})
-
-    stripe = Stripe("sk_test_1", api_version="v", transport=httpx.MockTransport(handler))
-    with pytest.raises(BillingError, match="That's already your plan"):
-        stripe.change_plan_url(subscription_id="sub_1", customer_id="cus_1", price_id="price_cy", return_url="u")
-    with pytest.raises(BillingError, match="No such price"):
-        stripe.portal(customer_id="cus_1", return_url="u")
-
-
-def test_checkout_finds_a_payment_the_webhook_missed(free_client, fake_billing):
-    """Paid, but the webhook never arrived: buying again is refused and the account catches up."""
-    c = free_client
-    uid = user("free@example.com").id
-    fake_billing.subs["sub_lost"] = subscription("price_cy", sub_id="sub_lost", metadata={"user_id": uid})
-    fake_billing.subs["sub_old"] = subscription("price_pm", sub_id="sub_old", status="canceled", metadata={"user_id": uid})
-    r = c.post("/api/billing/checkout", json={"plan": "creator", "period": "yearly"})
-    assert r.status_code == 409 and fake_billing.checkouts == []
-    me = c.get("/api/auth/me").json()
-    assert me["plan"]["id"] == "creator" and me["subscription"]["period"] == "yearly"
-
-
-def test_checkout_goes_ahead_when_only_ended_subscriptions_exist(free_client, fake_billing):
-    uid = user("free@example.com").id
-    fake_billing.subs["sub_old"] = subscription("price_cm", sub_id="sub_old", status="canceled", metadata={"user_id": uid})
-    assert free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "monthly"}).status_code == 200
-
-
-def test_subscription_search_request():
-    import httpx
-
-    from twapza.accounts.billing import Stripe
-
-    seen = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return httpx.Response(200, json={"data": [{"id": "a", "created": 1}, {"id": "b", "created": 2}]})
-
-    stripe = Stripe("sk_test_1", api_version="v", transport=httpx.MockTransport(handler))
-    assert [s["id"] for s in stripe.find_subscriptions("u1'x")] == ["b", "a"]
-    assert seen[0].method == "GET" and seen[0].url.path == "/v1/subscriptions/search"
-    assert seen[0].url.params["query"] == "metadata['user_id']:'u1x'"
-
-
-def test_stripe_ids_ignore_text_pasted_onto_the_same_line(monkeypatch):
-    monkeypatch.setenv("TWAPZA_STRIPE_PORTAL_CONFIGURATION", "bpc_123# low | medium | high (more tokens)")
-    monkeypatch.setenv("TWAPZA_STRIPE_PRICE_PRO_YEARLY", "  price_py  ")
-    monkeypatch.setenv("TWAPZA_STRIPE_PRICE_PRO_MONTHLY", "")
-    get_settings.cache_clear()
-    s = get_settings()
-    assert s.stripe_portal_configuration == "bpc_123"
-    assert s.prices == {("pro", "yearly"): "price_py"}
-    get_settings.cache_clear()
-
-
-def test_stripe_pages_follow_the_interface_language(free_client, fake_billing):
-    from twapza.accounts.billing import stripe_locale
-
-    assert [stripe_locale(x) for x in ("nl", "de", "ar", None, "xx")] == ["nl", "de", "en", "en", "en"]
-    free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "yearly", "lang": "es"})
-    assert fake_billing.checkouts[0]["lang"] == "es"
-
-
-def test_clear_subscription_after_switching_stripe_modes(free_client, fake_billing, capsys):
-    from twapza.users import main
-
-    fake_billing.subs["sub_1"] = subscription("price_cm")
-    send_webhook(free_client, "checkout.session.completed", checkout_completed(user("free@example.com").id))
-    assert free_client.get("/api/auth/me").json()["plan"]["id"] == "creator"
-    assert main(["clear-subscription", "free@example.com"]) == 0
-    u = user("free@example.com")
-    assert (u.plan, u.subscription_id, u.customer_id, u.subscription_status) == ("free", None, None, None)
-    assert free_client.get("/api/auth/me").json()["plan"]["id"] == "free"
-    assert free_client.get("/api/billing/portal").status_code == 404
-    # a new (live) checkout starts from a clean customer
-    free_client.post("/api/billing/checkout", json={"plan": "pro", "period": "monthly"})
-    assert fake_billing.checkouts[-1]["user"].customer_id is None
-    assert main(["clear-subscription", "nobody@example.com"]) == 1
-    assert main(["clear-subscription", "--all"]) == 0

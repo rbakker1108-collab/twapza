@@ -39,7 +39,7 @@ export const TERMS: Record<Lang, LegalDoc> = {
         heading: "Plans and payments",
         paragraphs: [
           "Twapza has a free plan and paid plans (Creator and Pro), billed monthly or yearly. What each plan includes is shown on the Pricing page.",
-          "Payments are processed by Stripe, which sells the subscription as merchant of record and adds VAT or sales tax where it applies. Stripe's terms also apply to your payment.",
+          "Payments are processed by Creem, which sells the subscription as merchant of record and adds VAT or sales tax where it applies. Creem's terms also apply to your payment.",
           "Subscriptions renew automatically until you cancel. You can cancel any time on your Account page (Manage subscription); your plan stays active until the end of the period you paid for. Unused minutes don't carry over. When you switch plans, the price difference is calculated pro rata.",
         ],
       },
@@ -115,7 +115,7 @@ export const TERMS: Record<Lang, LegalDoc> = {
         heading: "Abonnementen en betalingen",
         paragraphs: [
           "Twapza heeft een gratis abonnement en betaalde abonnementen (Creator en Pro), per maand of per jaar. Wat elk abonnement bevat, staat op de pagina Prijzen.",
-          "Betalingen worden verwerkt door Stripe, dat het abonnement als merchant of record verkoopt en btw of omzetbelasting toevoegt waar dat geldt. Voor je betaling gelden ook de voorwaarden van Stripe.",
+          "Betalingen worden verwerkt door Creem, dat het abonnement als merchant of record verkoopt en btw of omzetbelasting toevoegt waar dat geldt. Voor je betaling gelden ook de voorwaarden van Creem.",
           "Abonnementen worden automatisch verlengd tot je opzegt. Je kunt altijd opzeggen op je Accountpagina (Abonnement beheren); je abonnement blijft actief tot het einde van de periode waarvoor je hebt betaald. Ongebruikte minuten gaan niet mee naar de volgende maand. Als je van abonnement wisselt, wordt het prijsverschil naar rato berekend.",
         ],
       },
@@ -191,7 +191,7 @@ export const TERMS: Record<Lang, LegalDoc> = {
         heading: "Planes y pagos",
         paragraphs: [
           "Twapza tiene un plan gratuito y planes de pago (Creator y Pro), con facturación mensual o anual. Lo que incluye cada plan se muestra en la página de Precios.",
-          "Los pagos los procesa Stripe, que vende la suscripción como merchant of record y añade el IVA o los impuestos sobre ventas cuando corresponda. Los términos de Stripe también se aplican a tu pago.",
+          "Los pagos los procesa Creem, que vende la suscripción como merchant of record y añade el IVA o los impuestos sobre ventas cuando corresponda. Los términos de Creem también se aplican a tu pago.",
           "Las suscripciones se renuevan automáticamente hasta que las canceles. Puedes cancelar en cualquier momento desde tu página de Cuenta (Gestionar suscripción); tu plan sigue activo hasta el final del periodo pagado. Los minutos no usados no se acumulan. Si cambias de plan, la diferencia de precio se calcula de forma proporcional.",
         ],
       },
@@ -267,7 +267,7 @@ export const TERMS: Record<Lang, LegalDoc> = {
         heading: "Pläne und Zahlungen",
         paragraphs: [
           "Twapza hat einen kostenlosen Plan und bezahlte Pläne (Creator und Pro), monatlich oder jährlich abgerechnet. Was jeder Plan enthält, steht auf der Preisseite.",
-          "Zahlungen werden von Stripe abgewickelt, das das Abo als Merchant of Record verkauft und, wo nötig, MwSt. oder Umsatzsteuer hinzufügt. Für deine Zahlung gelten auch die Bedingungen von Stripe.",
+          "Zahlungen werden von Creem abgewickelt, das das Abo als Merchant of Record verkauft und, wo nötig, MwSt. oder Umsatzsteuer hinzufügt. Für deine Zahlung gelten auch die Bedingungen von Creem.",
           "Abos verlängern sich automatisch, bis du kündigst. Du kannst jederzeit auf deiner Kontoseite kündigen (Abo verwalten); dein Plan bleibt bis zum Ende des bezahlten Zeitraums aktiv. Ungenutzte Minuten verfallen. Beim Planwechsel wird der Preisunterschied anteilig berechnet.",
         ],
       },
@@ -343,7 +343,7 @@ export const TERMS: Record<Lang, LegalDoc> = {
         heading: "Offres et paiements",
         paragraphs: [
           "Twapza propose une offre gratuite et des offres payantes (Creator et Pro), facturées au mois ou à l'année. Le contenu de chaque offre est indiqué sur la page Tarifs.",
-          "Les paiements sont traités par Stripe, qui vend l'abonnement en tant que merchant of record et ajoute la TVA ou les taxes de vente le cas échéant. Les conditions de Stripe s'appliquent aussi à votre paiement.",
+          "Les paiements sont traités par Creem, qui vend l'abonnement en tant que merchant of record et ajoute la TVA ou les taxes de vente le cas échéant. Les conditions de Creem s'appliquent aussi à votre paiement.",
           "Les abonnements se renouvellent automatiquement jusqu'à leur résiliation. Vous pouvez résilier à tout moment sur votre page Compte (Gérer l'abonnement) ; votre offre reste active jusqu'à la fin de la période payée. Les minutes non utilisées ne sont pas reportées. En cas de changement d'offre, la différence de prix est calculée au prorata.",
         ],
       },
@@ -419,7 +419,7 @@ export const TERMS: Record<Lang, LegalDoc> = {
         heading: "الخطط والمدفوعات",
         paragraphs: [
           "يقدّم Twapza خطة مجانية وخططًا مدفوعة (Creator وPro) بفوترة شهرية أو سنوية. تظهر محتويات كل خطة في صفحة الأسعار.",
-          "تعالج Stripe المدفوعات، وتبيع الاشتراك بصفتها البائع المسجّل (merchant of record) وتضيف ضريبة القيمة المضافة أو ضريبة المبيعات حيث تنطبق. تنطبق شروط Stripe أيضًا على عملية الدفع.",
+          "تعالج Creem المدفوعات، وتبيع الاشتراك بصفتها البائع المسجّل (merchant of record) وتضيف ضريبة القيمة المضافة أو ضريبة المبيعات حيث تنطبق. تنطبق شروط Creem أيضًا على عملية الدفع.",
           "تتجدد الاشتراكات تلقائيًا حتى تلغيها. يمكنك الإلغاء في أي وقت من صفحة حسابك (إدارة الاشتراك)؛ وتبقى خطتك فعّالة حتى نهاية الفترة المدفوعة. لا تُرحَّل الدقائق غير المستخدمة. عند تغيير الخطة يُحتسب فرق السعر بالتناسب.",
         ],
       },

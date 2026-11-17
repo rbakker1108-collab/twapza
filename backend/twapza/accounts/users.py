@@ -56,7 +56,7 @@ def delete_user(session: Session, user: User) -> None:
     """Delete the account, its projects and files, and cancel its subscription."""
     from twapza.cleanup import delete_project
 
-    if user.subscription_id and user.subscription_status not in (None, "canceled", "incomplete_expired", "manual"):
+    if user.subscription_id and user.subscription_status not in (None, "canceled", "unpaid", "manual"):
         billing = get_billing(get_settings())
         if billing is not None:
             try:

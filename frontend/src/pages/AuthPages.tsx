@@ -130,7 +130,7 @@ export function SignupPage() {
       setAccount(created);
       if (paid && created.billing_enabled) {
         try {
-          await choosePlan(created, plan, period, lang); // goes to the checkout page
+          await choosePlan(created, plan, period); // goes to the checkout page
           return;
         } catch {
           navigate("/account#plans", { replace: true });

@@ -205,20 +205,20 @@ class User(SQLModel, table=True):
     password_hash: str
     lang: str = "en"
     created_at: datetime = Field(default_factory=utcnow)
-    # Subscription, kept in sync by the Stripe webhook (see accounts/billing.py).
+    # Subscription, kept in sync by the Creem webhook (see accounts/billing.py).
     plan: str = "free"  # free | creator | pro (what they pay for; see accounts.plans.effective_plan)
     period: str | None = None  # monthly | yearly
-    # Stripe status (active, trialing, past_due, paused, unpaid, canceled, incomplete,
-    # incomplete_expired), or "manual" for a plan set with `python -m twapza.users set-plan`.
+    # Creem status (active, trialing, past_due, scheduled_cancel, paused, unpaid, canceled),
+    # or "manual" for a plan set with `python -m twapza.users set-plan`.
     subscription_status: str | None = None
     subscription_id: str | None = Field(default=None, index=True)
     customer_id: str | None = None
-    price_id: str | None = None
+    price_id: str | None = None  # the Creem product the subscription is for
     renews_at: datetime | None = None
     ends_at: datetime | None = None  # set when the subscription is cancelled at period end
     # Monthly minutes reset on this date's day of the month (sign-up, or when they subscribed).
     period_anchor: datetime | None = None
-    subscription_updated_at: datetime | None = None  # when we last copied it from Stripe
+    subscription_updated_at: datetime | None = None  # when we last copied it from Creem
 
 
 class AuthSession(SQLModel, table=True):

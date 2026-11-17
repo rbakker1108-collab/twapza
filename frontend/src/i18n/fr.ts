@@ -488,7 +488,6 @@ const messages: Record<string, string> = {
   "Password": "Mot de passe",
   "Password changed. Other devices are logged out.": "Mot de passe modifié. Les autres appareils ont été déconnectés.",
   "Payment method, invoices, cancel": "Moyen de paiement, factures, résiliation",
-  "Payments are handled securely by Stripe. Prices exclude VAT/sales tax, which is added at checkout where it applies.": "Les paiements sont traités en toute sécurité par Stripe. Les prix sont hors TVA/taxes, ajoutées au paiement le cas échéant.",
   "Plans": "Offres",
   "Renews on {date}.": "Renouvellement le {date}.",
   "Reset your password": "Réinitialiser votre mot de passe",
@@ -591,5 +590,8 @@ const messages: Record<string, string> = {
   "Why are some options locked?": "Pourquoi certaines options sont-elles verrouillées ?",
   "“Quick download” skips the editor and uses your current settings.": "« Téléchargement rapide » saute l'éditeur et utilise vos réglages actuels.",
   "“Short & loopable” looks for 20–45 second moments that replay smoothly.": "« Court et en boucle » cherche des moments de 20 à 45 secondes qui se rejouent en douceur.",
+  // Payments (Creem)
+  "Payments are handled by Creem, which sells as merchant of record. Prices exclude VAT/sales tax, which is added at checkout where it applies.": "Les paiements sont gérés par Creem, qui vend en tant que merchant of record. Les prix sont hors TVA/taxes, ajoutées au paiement le cas échéant.",
+  "Switch to {plan} now? The price difference is charged right away.": "Passer à {plan} maintenant ? La différence de prix est débitée immédiatement.",
 };
 export default messages;

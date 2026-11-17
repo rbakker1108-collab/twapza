@@ -14,7 +14,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
           "Account: your email address, your password (stored only as a secure hash, never readable), your language and your plan.",
           "Your videos: files you upload or YouTube links you import, and everything we make from them (preview, audio, transcript, clips, texts and descriptions).",
           "Usage: how many video minutes you processed each month, so we can apply your plan's limits.",
-          "Payments: Stripe handles payments. We never see or store your card details; we only receive your subscription status and a Stripe customer ID.",
+          "Payments: Creem handles payments. We never see or store your card details; we only receive your subscription status and a Creem customer ID.",
           "Technical data: your IP address and browser requests, used briefly for security and to stop abuse (for example too many login attempts).",
         ],
       },
@@ -22,7 +22,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         heading: "How long we keep it",
         paragraphs: [
           "Videos and everything made from them are deleted automatically 24 hours after you add them, or straight away when you delete the project. Your original file is never changed.",
-          "Your account and usage records stay until you delete your account (Account page → Delete account). Payment records are kept by Stripe as long as tax law requires.",
+          "Your account and usage records stay until you delete your account (Account page → Delete account). Payment records are kept by Creem as long as tax law requires.",
         ],
       },
       {
@@ -39,7 +39,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         paragraphs: [
           "Hetzner Online (Germany) hosts our servers and stores your data. Transcription runs on our own server.",
           "Anthropic (Claude AI, United States) receives the text of your video's transcript to find the best moments and write titles and descriptions. Your video file itself is not sent. Anthropic does not use this data to train its models.",
-          "Stripe handles payments and, as merchant of record, taxes. Its own privacy policy applies to your payment.",
+          "Creem handles payments and, as merchant of record, taxes. Its own privacy policy applies to your payment.",
           "An email service sends account emails such as password resets.",
           "When these services process data outside the EU, this happens under appropriate safeguards such as the EU Standard Contractual Clauses.",
         ],
@@ -81,7 +81,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
           "Account: je e-mailadres, je wachtwoord (alleen opgeslagen als veilige hash, nooit leesbaar), je taal en je abonnement.",
           "Je video's: bestanden die je uploadt of YouTube-links die je importeert, en alles wat we ervan maken (preview, audio, transcript, clips, teksten en beschrijvingen).",
           "Gebruik: hoeveel videominuten je per maand verwerkt, zodat we de limieten van je abonnement kunnen toepassen.",
-          "Betalingen: Stripe verwerkt de betalingen. Wij zien of bewaren je kaartgegevens nooit; we ontvangen alleen de status van je abonnement en een Stripe-klantnummer.",
+          "Betalingen: Creem verwerkt de betalingen. Wij zien of bewaren je kaartgegevens nooit; we ontvangen alleen de status van je abonnement en een Creem-klantnummer.",
           "Technische gegevens: je IP-adres en browserverzoeken, kort gebruikt voor beveiliging en om misbruik te stoppen (bijvoorbeeld te veel inlogpogingen).",
         ],
       },
@@ -89,7 +89,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         heading: "Hoe lang we het bewaren",
         paragraphs: [
           "Video's en alles wat ervan gemaakt is, worden 24 uur nadat je ze toevoegt automatisch verwijderd, of meteen wanneer je het project verwijdert. Je originele bestand wordt nooit aangepast.",
-          "Je account en gebruiksgegevens blijven bewaard tot je je account verwijdert (Accountpagina → Account verwijderen). Betaalgegevens bewaart Stripe zo lang als de belastingwet vereist.",
+          "Je account en gebruiksgegevens blijven bewaard tot je je account verwijdert (Accountpagina → Account verwijderen). Betaalgegevens bewaart Creem zo lang als de belastingwet vereist.",
         ],
       },
       {
@@ -106,7 +106,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         paragraphs: [
           "Hetzner Online (Duitsland) host onze servers en slaat je gegevens op. Transcriptie draait op onze eigen server.",
           "Anthropic (Claude AI, Verenigde Staten) ontvangt de tekst van het transcript van je video om de beste momenten te vinden en titels en beschrijvingen te schrijven. Je videobestand zelf wordt niet verstuurd. Anthropic gebruikt deze gegevens niet om zijn modellen te trainen.",
-          "Stripe verwerkt betalingen en, als merchant of record, de belastingen. Voor je betaling geldt het privacybeleid van Stripe.",
+          "Creem verwerkt betalingen en, als merchant of record, de belastingen. Voor je betaling geldt het privacybeleid van Creem.",
           "Een e-maildienst verstuurt accountmails zoals wachtwoordresets.",
           "Als deze diensten gegevens buiten de EU verwerken, gebeurt dat met passende waarborgen, zoals de modelcontractbepalingen van de EU.",
         ],
@@ -148,7 +148,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
           "Cuenta: tu correo electrónico, tu contraseña (guardada solo como hash seguro, nunca legible), tu idioma y tu plan.",
           "Tus vídeos: los archivos que subes o los enlaces de YouTube que importas, y todo lo que creamos a partir de ellos (vista previa, audio, transcripción, clips, textos y descripciones).",
           "Uso: cuántos minutos de vídeo procesas cada mes, para aplicar los límites de tu plan.",
-          "Pagos: Stripe gestiona los pagos. Nunca vemos ni guardamos los datos de tu tarjeta; solo recibimos el estado de tu suscripción y un ID de cliente de Stripe.",
+          "Pagos: Creem gestiona los pagos. Nunca vemos ni guardamos los datos de tu tarjeta; solo recibimos el estado de tu suscripción y un ID de cliente de Creem.",
           "Datos técnicos: tu dirección IP y las solicitudes del navegador, usadas brevemente por seguridad y para frenar abusos (por ejemplo, demasiados intentos de inicio de sesión).",
         ],
       },
@@ -156,7 +156,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         heading: "Cuánto tiempo lo guardamos",
         paragraphs: [
           "Los vídeos y todo lo creado a partir de ellos se eliminan automáticamente 24 horas después de añadirlos, o al instante si eliminas el proyecto. Tu archivo original nunca se modifica.",
-          "Tu cuenta y tus registros de uso se conservan hasta que eliminas tu cuenta (página de Cuenta → Eliminar cuenta). Stripe conserva los registros de pago durante el tiempo que exija la ley fiscal.",
+          "Tu cuenta y tus registros de uso se conservan hasta que eliminas tu cuenta (página de Cuenta → Eliminar cuenta). Creem conserva los registros de pago durante el tiempo que exija la ley fiscal.",
         ],
       },
       {
@@ -173,7 +173,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         paragraphs: [
           "Hetzner Online (Alemania) aloja nuestros servidores y guarda tus datos. La transcripción se realiza en nuestro propio servidor.",
           "Anthropic (Claude AI, Estados Unidos) recibe el texto de la transcripción de tu vídeo para encontrar los mejores momentos y escribir títulos y descripciones. Tu archivo de vídeo no se envía. Anthropic no usa estos datos para entrenar sus modelos.",
-          "Stripe gestiona los pagos y, como merchant of record, los impuestos. Para tu pago se aplica la política de privacidad de Stripe.",
+          "Creem gestiona los pagos y, como merchant of record, los impuestos. Para tu pago se aplica la política de privacidad de Creem.",
           "Un servicio de correo envía los mensajes de la cuenta, como el restablecimiento de contraseña.",
           "Cuando estos servicios tratan datos fuera de la UE, lo hacen con garantías adecuadas, como las cláusulas contractuales tipo de la UE.",
         ],
@@ -215,7 +215,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
           "Konto: deine E-Mail-Adresse, dein Passwort (nur als sicherer Hash gespeichert, nie lesbar), deine Sprache und dein Plan.",
           "Deine Videos: Dateien, die du hochlädst, oder YouTube-Links, die du importierst, und alles, was wir daraus erstellen (Vorschau, Audio, Transkript, Clips, Texte und Beschreibungen).",
           "Nutzung: wie viele Videominuten du pro Monat verarbeitest, damit wir die Limits deines Plans anwenden können.",
-          "Zahlungen: Stripe wickelt die Zahlungen ab. Wir sehen oder speichern deine Kartendaten nie; wir erhalten nur den Status deines Abos und eine Stripe-Kundennummer.",
+          "Zahlungen: Creem wickelt die Zahlungen ab. Wir sehen oder speichern deine Kartendaten nie; wir erhalten nur den Status deines Abos und eine Creem-Kundennummer.",
           "Technische Daten: deine IP-Adresse und Browseranfragen, kurz genutzt für Sicherheit und gegen Missbrauch (zum Beispiel zu viele Anmeldeversuche).",
         ],
       },
@@ -223,7 +223,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         heading: "Wie lange wir Daten speichern",
         paragraphs: [
           "Videos und alles, was daraus erstellt wurde, werden 24 Stunden nach dem Hinzufügen automatisch gelöscht, oder sofort, wenn du das Projekt löschst. Deine Originaldatei wird nie verändert.",
-          "Dein Konto und deine Nutzungsdaten bleiben gespeichert, bis du dein Konto löschst (Kontoseite → Konto löschen). Zahlungsunterlagen bewahrt Stripe so lange auf, wie das Steuerrecht es verlangt.",
+          "Dein Konto und deine Nutzungsdaten bleiben gespeichert, bis du dein Konto löschst (Kontoseite → Konto löschen). Zahlungsunterlagen bewahrt Creem so lange auf, wie das Steuerrecht es verlangt.",
         ],
       },
       {
@@ -240,7 +240,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         paragraphs: [
           "Hetzner Online (Deutschland) hostet unsere Server und speichert deine Daten. Die Transkription läuft auf unserem eigenen Server.",
           "Anthropic (Claude AI, USA) erhält den Text des Transkripts deines Videos, um die besten Momente zu finden und Titel und Beschreibungen zu schreiben. Deine Videodatei selbst wird nicht gesendet. Anthropic nutzt diese Daten nicht zum Training seiner Modelle.",
-          "Stripe wickelt Zahlungen und, als Merchant of Record, die Steuern ab. Für deine Zahlung gilt die Datenschutzerklärung von Stripe.",
+          "Creem wickelt Zahlungen und, als Merchant of Record, die Steuern ab. Für deine Zahlung gilt die Datenschutzerklärung von Creem.",
           "Ein E-Mail-Dienst versendet Konto-E-Mails wie das Zurücksetzen des Passworts.",
           "Wenn diese Dienste Daten außerhalb der EU verarbeiten, geschieht das mit geeigneten Garantien wie den EU-Standardvertragsklauseln.",
         ],
@@ -282,7 +282,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
           "Compte : votre adresse e-mail, votre mot de passe (stocké uniquement sous forme de hachage sécurisé, jamais lisible), votre langue et votre offre.",
           "Vos vidéos : les fichiers que vous importez ou les liens YouTube que vous ajoutez, et tout ce que nous en tirons (aperçu, audio, transcription, clips, textes et descriptions).",
           "Utilisation : le nombre de minutes de vidéo traitées chaque mois, pour appliquer les limites de votre offre.",
-          "Paiements : Stripe gère les paiements. Nous ne voyons ni ne stockons jamais vos données de carte ; nous recevons seulement le statut de votre abonnement et un identifiant client Stripe.",
+          "Paiements : Creem gère les paiements. Nous ne voyons ni ne stockons jamais vos données de carte ; nous recevons seulement le statut de votre abonnement et un identifiant client Creem.",
           "Données techniques : votre adresse IP et les requêtes du navigateur, utilisées brièvement pour la sécurité et contre les abus (par exemple trop de tentatives de connexion).",
         ],
       },
@@ -290,7 +290,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         heading: "Durée de conservation",
         paragraphs: [
           "Les vidéos et tout ce qui en est tiré sont supprimés automatiquement 24 heures après leur ajout, ou immédiatement si vous supprimez le projet. Votre fichier original n'est jamais modifié.",
-          "Votre compte et vos données d'utilisation sont conservés jusqu'à la suppression de votre compte (page Compte → Supprimer le compte). Stripe conserve les données de paiement aussi longtemps que la loi fiscale l'exige.",
+          "Votre compte et vos données d'utilisation sont conservés jusqu'à la suppression de votre compte (page Compte → Supprimer le compte). Creem conserve les données de paiement aussi longtemps que la loi fiscale l'exige.",
         ],
       },
       {
@@ -307,7 +307,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         paragraphs: [
           "Hetzner Online (Allemagne) héberge nos serveurs et stocke vos données. La transcription s'effectue sur notre propre serveur.",
           "Anthropic (Claude AI, États-Unis) reçoit le texte de la transcription de votre vidéo pour trouver les meilleurs moments et rédiger titres et descriptions. Votre fichier vidéo n'est pas envoyé. Anthropic n'utilise pas ces données pour entraîner ses modèles.",
-          "Stripe gère les paiements et, en tant que merchant of record, les taxes. La politique de confidentialité de Stripe s'applique à votre paiement.",
+          "Creem gère les paiements et, en tant que merchant of record, les taxes. La politique de confidentialité de Creem s'applique à votre paiement.",
           "Un service d'e-mail envoie les messages liés au compte, comme la réinitialisation du mot de passe.",
           "Lorsque ces services traitent des données hors de l'UE, ils le font avec des garanties appropriées, comme les clauses contractuelles types de l'UE.",
         ],
@@ -349,7 +349,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
           "الحساب: بريدك الإلكتروني، وكلمة المرور (تُحفظ فقط كقيمة مشفّرة آمنة ولا يمكن قراءتها)، ولغتك، وخطتك.",
           "فيديوهاتك: الملفات التي ترفعها أو روابط يوتيوب التي تستوردها، وكل ما ننشئه منها (المعاينة، والصوت، والنص المفرّغ، والمقاطع، والنصوص والأوصاف).",
           "الاستخدام: عدد دقائق الفيديو التي تعالجها كل شهر، لتطبيق حدود خطتك.",
-          "المدفوعات: تتولى Stripe المدفوعات. لا نرى بيانات بطاقتك ولا نحفظها أبدًا؛ نتلقى فقط حالة اشتراكك ورقم عميل لدى Stripe.",
+          "المدفوعات: تتولى Creem المدفوعات. لا نرى بيانات بطاقتك ولا نحفظها أبدًا؛ نتلقى فقط حالة اشتراكك ورقم عميل لدى Creem.",
           "البيانات التقنية: عنوان IP وطلبات المتصفح، نستخدمها لفترة قصيرة للأمان ومنع إساءة الاستخدام (مثل كثرة محاولات تسجيل الدخول).",
         ],
       },
@@ -357,7 +357,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         heading: "مدة الاحتفاظ",
         paragraphs: [
           "تُحذف الفيديوهات وكل ما أُنشئ منها تلقائيًا بعد 24 ساعة من إضافتها، أو فورًا عند حذف المشروع. لا يُعدَّل ملفك الأصلي أبدًا.",
-          "يبقى حسابك وسجلات استخدامك حتى تحذف حسابك (صفحة الحساب ← حذف الحساب). تحتفظ Stripe بسجلات الدفع للمدة التي يفرضها قانون الضرائب.",
+          "يبقى حسابك وسجلات استخدامك حتى تحذف حسابك (صفحة الحساب ← حذف الحساب). تحتفظ Creem بسجلات الدفع للمدة التي يفرضها قانون الضرائب.",
         ],
       },
       {
@@ -374,7 +374,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         paragraphs: [
           "تستضيف Hetzner Online (ألمانيا) خوادمنا وتخزّن بياناتك. يجري التفريغ النصي على خادمنا الخاص.",
           "تتلقى Anthropic (Claude AI، الولايات المتحدة) نص تفريغ الفيديو لإيجاد أفضل اللحظات وكتابة العناوين والأوصاف. لا يُرسل ملف الفيديو نفسه. لا تستخدم Anthropic هذه البيانات لتدريب نماذجها.",
-          "تتولى Stripe المدفوعات، وبصفتها البائع المسجّل (merchant of record) تتولى الضرائب أيضًا. تنطبق سياسة خصوصية Stripe على عملية الدفع.",
+          "تتولى Creem المدفوعات، وبصفتها البائع المسجّل (merchant of record) تتولى الضرائب أيضًا. تنطبق سياسة خصوصية Creem على عملية الدفع.",
           "ترسل خدمة بريد إلكتروني رسائل الحساب مثل إعادة تعيين كلمة المرور.",
           "عندما تعالج هذه الخدمات البيانات خارج الاتحاد الأوروبي، يتم ذلك بضمانات مناسبة مثل البنود التعاقدية القياسية للاتحاد الأوروبي.",
         ],

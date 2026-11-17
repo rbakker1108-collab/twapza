@@ -186,10 +186,10 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   the retention cleanup; `cleanup_logins` drops expired sessions/reset tokens). Delete account
   (`accounts/users.delete_user`) cancels the subscription, deletes projects + files. Admin CLI:
   `python -m twapza.users list | set-plan EMAIL PLAN | delete EMAIL | clear-subscription EMAIL|--all` (`set-plan` =
-  status `manual`; `clear-subscription` forgets Stripe IDs, e.g. after moving from test to live mode).
+  status `manual`; `clear-subscription` forgets payment-provider IDs, e.g. after moving from test to live mode).
 - **Plans + limits** (`accounts/plans.py`, pure; `usage.py`): Free 60 min/month, videos ≤ 60 min, watermark;
   Creator 300 min, ≤ 120 min, `editing`; Pro 1200 min, ≤ 180 min, `zip`, `priority`. `effective_plan_id`
-  (paid statuses active/trialing/past_due/manual; a passed `ends_at` counts as ended), months run from
+  (paid statuses active/trialing/past_due/scheduled_cancel/manual; a passed `ends_at` counts as ended), months run from
   `User.period_anchor` (`period_bounds`). Minutes are charged once per project at the end of ingest
   (`usage.record_usage` → `UsageEvent`); ingest/import fail with a readable message when the video is too long
   for the plan or doesn't fit the minutes left (`usage.video_problem`; import checks before downloading);
@@ -201,27 +201,27 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   drain first. Frontend: `auth/AuthProvider` (`useAuth`, `usePlan`: everything allowed when no account is
   loaded, e.g. component tests; `choosePlan`), `auth/UpgradeNote`, locked boosts in `ExportOptions`, locked
   editor tabs, `DownloadAllButton`/`DescriptionPanel` upgrade notes.
-- **Billing** (`accounts/billing.py`, `api/routes/billing.py`): Stripe Billing + **Managed Payments**
-  (Stripe = merchant of record; `TWAPZA_STRIPE_MANAGED_PAYMENTS=false` → plain Stripe, we are the seller).
-  REST via httpx, no SDK, `Stripe-Version: TWAPZA_STRIPE_API_VERSION` (2026-10-28.endive; params checked
-  against the stripe-python 17 SDK), form-encoded with `billing.encode` (`a[b][0]=…`). `POST
-  /api/billing/checkout {plan, period}` → Checkout Session (`mode=subscription`, `managed_payments[enabled]`,
-  `client_reference_id` + `subscription_data.metadata.user_id`, `customer` when known else `customer_email`;
-  success `/account?upgraded=1`, which polls `/me` until the subscription changes; `locale` = the interface
-  language via `billing.stripe_locale`, Arabic → English since Stripe has no Arabic; same for the portal). `POST
-  /api/billing/change-plan` → URL of a portal `subscription_update_confirm` flow (Stripe prorates); `GET
-  /api/billing/portal` → portal session (`TWAPZA_STRIPE_PORTAL_CONFIGURATION`). `POST /api/billing/webhook`
-  verifies `Stripe-Signature` (`t=…,v1=` HMAC-SHA256 of `"{t}.{body}"`, 5 min tolerance), and for
-  `checkout.session.completed` / `customer.subscription.*` **re-reads the subscription from Stripe** and
-  `apply_subscription` copies it (price → plan/period via the four `TWAPZA_STRIPE_PRICE_*`; period end from the
-  subscription item; `cancel_at_period_end`/`cancel_at` → `ends_at`), so duplicate/out-of-order events are
-  harmless. User found by `client_reference_id`/`metadata.user_id`, then `subscription_id`, then `customer_id`.
-  Without `TWAPZA_STRIPE_SECRET_KEY` billing endpoints answer 503 and the UI says paid plans can't be bought.
-  `python -m twapza.stripe_setup` creates products (tax code `txcd_10103000`), the four prices (tax-exclusive,
-  lookup keys `twapza_<plan>_<period>`) and a portal configuration, and prints the `.env` lines. Tests replace
-  the `billing_client` dependency with `FakeStripe`; the real client's request shape is checked with an httpx
-  mock transport. (Lemon Squeezy was used before; it closed to new stores. Schema v9 renamed
-  `User.variant_id` → `price_id`.)
+- **Billing** (`accounts/billing.py`, `api/routes/billing.py`): **Creem** (merchant of record: sells to the customer,
+  handles VAT/sales tax; accepts individuals, so no company registration is needed for it). REST + JSON via httpx,
+  no SDK, `x-api-key` header; `creem_test_…` keys use `https://test-api.creem.io`, others `https://api.creem.io`
+  (`Settings.creem_test_mode`). Docs: docs.creem.io (`llms.txt` lists the pages; endpoint shapes were checked
+  against its API reference). `POST /api/billing/checkout {plan, period}` → `POST /v1/checkouts` (`product_id`,
+  `request_id` = user id, `customer` {id} when known else {email}, `success_url` `/account?upgraded=1`, `metadata`
+  {user_id}, which Creem copies onto the subscription) → `checkout_url`; before that `_found_running_subscription`
+  looks the email up (`GET /v1/customers?email=` → `/v1/customers/{id}/subscriptions`) so nobody pays twice when a
+  webhook was lost. `POST /api/billing/change-plan` → `POST /v1/subscriptions/{id}/upgrade`
+  (`proration-charge-immediately`, applied straight away; the UI asks to confirm first). `GET /api/billing/portal` →
+  `POST /v1/customers/billing` → `customer_portal_link`. `POST /api/billing/webhook` verifies `creem-signature`
+  (hex HMAC-SHA256 of the raw body), and for `checkout.completed` / `subscription.*` **re-reads the subscription**
+  (`GET /v1/subscriptions?subscription_id=`) and `apply_subscription` copies it (product → plan/period via the four
+  `TWAPZA_CREEM_PRODUCT_*`; `current_period_end_date`; status `scheduled_cancel` → `ends_at`), so duplicate or
+  out-of-order events are harmless. User found by `metadata.user_id`, then `subscription_id`, then `customer_id`.
+  Without `TWAPZA_CREEM_API_KEY` billing endpoints answer 503 and the UI says paid plans can't be bought.
+  `python -m twapza.creem_setup` creates the four recurring products (USD, tax-exclusive, `saas`, idempotency keys
+  `twapza_<plan>_<period>`) and prints the `.env` lines. Creem's checkout has no language setting. Tests replace the
+  `billing_client` dependency with `FakeCreem`; the real client's request shape is checked with an httpx mock
+  transport. (History: Lemon Squeezy, then Stripe Managed Payments, which needs a KvK registration. Schema v9
+  renamed `User.variant_id` → `price_id`, which now holds the Creem product ID.)
 
 ## Layout
 
@@ -250,9 +250,9 @@ backend/twapza/
   exports.py           ExportSettings, output_size, deterministic export keys, download filenames
   workers/tasks.py     RQ entrypoints (take string IDs only)
   workers/__main__.py  `python -m twapza.workers`
-  accounts/            passwords.py, plans.py (pure limits), usage.py, users.py, billing.py (Stripe), mail.py, ratelimit.py
+  accounts/            passwords.py, plans.py (pure limits), usage.py, users.py, billing.py (Creem), mail.py, ratelimit.py
   users.py             account admin CLI (list, set-plan, delete)
-  stripe_setup.py      creates Stripe products/prices/portal config, prints the .env lines
+  creem_setup.py       creates the Creem products, prints the .env lines
   waitlist.py          early-access list CLI (CSV export, --remove)
   cleanup.py           expiry + orphan sweep + job watchdog loop; `python -m twapza.cleanup [--once]`
 backend/tests/         pytest (unit + ffmpeg integration on synthetic media)
@@ -379,7 +379,7 @@ External services (Whisper, Claude) must be faked behind their protocols in test
 
 11. ✅ Website: landing page, Features, Solutions, Pricing, Resources (guides), early-access waitlist;
     app moved to `/app`.
-12. ✅ Accounts (email + password, sessions, reset, delete) and paid plans via Stripe (Managed Payments): monthly
+12. ✅ Accounts (email + password, sessions, reset, delete) and paid plans via Creem (merchant of record): monthly
     minutes, video length, watermark, Creator/Pro features, priority queue, account page.
 
 Possible next steps: email verification, Google login, terms + privacy pages, face-tracked vertical crop

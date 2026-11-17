@@ -27,7 +27,7 @@ export function PricingCards({ yearly }: { yearly: boolean }) {
     setBusy(planId);
     setError(null);
     try {
-      await choosePlan(account, planId, period, lang);
+      await choosePlan(account, planId, period);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

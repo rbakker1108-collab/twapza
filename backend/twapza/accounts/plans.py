@@ -4,10 +4,10 @@ import calendar
 from dataclasses import asdict, dataclass
 from datetime import datetime
 
-# Stripe subscription statuses during which the paid plan applies ("past_due": while Stripe
-# retries a failed payment). A subscription cancelled at period end stays "active" until then.
+# Creem subscription statuses during which the paid plan applies ("past_due": while Creem retries
+# a failed payment; "scheduled_cancel": cancelled, but paid until the period ends).
 # "manual" is a plan set by hand (`python -m twapza.users`).
-ACTIVE_STATUSES = {"active", "trialing", "past_due", "manual"}
+ACTIVE_STATUSES = {"active", "trialing", "past_due", "scheduled_cancel", "manual"}
 
 
 @dataclass(frozen=True)

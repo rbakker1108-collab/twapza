@@ -100,39 +100,32 @@ everyone only sees their own projects. Plans and their limits (`backend/twapza/a
 A video's length counts towards the month when it has been processed (deleting it doesn't give the
 minutes back). Months start on the day you signed up or subscribed.
 
-**Payments** go through [Stripe](https://stripe.com/) with
-[Managed Payments](https://stripe.com/managed-payments): Stripe is the merchant of record, so it
-sells to your customers and handles VAT/sales tax, fraud and disputes worldwide (customers see
-the purchase as sold through Link, Stripe's checkout). Managed Payments costs an extra fee on top
-of normal Stripe fees; check your Stripe dashboard for the current numbers. To switch it on:
+**Payments** go through [Creem](https://www.creem.io/), a merchant of record: Creem sells to your
+customers and handles VAT/sales tax worldwide, and accepts individuals (no company registration
+needed on their side; check yourself whether Dutch law asks you to register at the KvK). Fees are
+about 3.9% + $0.40 per sale. To switch it on:
 
-1. Create a Stripe account (to go live you'll need your business details, e.g. KvK). Stay in
-   **test mode** (sandbox) for now.
-2. Turn on **Managed Payments** in the Dashboard (search for "Managed Payments") and accept its
-   terms. It's offered in a limited set of countries; if it isn't available for your account, set
-   `TWAPZA_STRIPE_MANAGED_PAYMENTS=false`: Twapza then uses plain Stripe Billing and you are the
-   seller (turn on Stripe Tax and register for VAT yourself).
-3. **Developers → API keys**: copy the **secret key** (`sk_test_…`) into `.env` as
-   `TWAPZA_STRIPE_SECRET_KEY` (only in `.env` on the server; never in chat, email or git).
-4. Create the products, prices and portal settings in one go, and paste the printed lines into `.env`:
+1. Create a Creem account and store. Your account is reviewed before you can take live payments;
+   start in **test mode** (switch in the dashboard).
+2. **Developers → API keys**: create a test key (`creem_test_…`) and put it in `.env` as
+   `TWAPZA_CREEM_API_KEY` (only in `.env` on the server; never in chat, email or git). Restart.
+3. Create the four products (Creator $15/month or $144/year, Pro $29/month or $276/year, prices
+   excluding tax, tax category SaaS) and paste the printed lines into `.env`:
 
    ```bash
-   docker compose exec twapza-api python -m twapza.stripe_setup
+   docker compose exec twapza-api python -m twapza.creem_setup
    ```
 
-   (Creator $15/month or $144/year, Pro $29/month or $276/year, tax code "SaaS - personal use",
-   prices excluding tax. Change them in `twapza/stripe_setup.py` *and* `frontend/src/marketing/plans.ts`.)
-5. **Developers → Webhooks → Add endpoint**: `https://<your domain>/api/billing/webhook`, events
-   `checkout.session.completed` and `customer.subscription.created / updated / deleted / paused /
-   resumed`. Copy its **signing secret** (`whsec_…`) into `TWAPZA_STRIPE_WEBHOOK_SECRET`.
-6. Restart (`docker compose … up -d`). Test with card `4242 4242 4242 4242`, any future date, any CVC.
+   (Change prices in `twapza/creem_setup.py` *and* `frontend/src/marketing/plans.ts`.)
+4. **Developers → Webhooks**: add `https://<your domain>/api/billing/webhook` (all events is fine)
+   and copy its secret into `TWAPZA_CREEM_WEBHOOK_SECRET`.
+5. Restart (`docker compose … up -d`). Test with card `4111 1111 1111 1111`, any future date, any CVC.
 
-On your own computer, the Stripe CLI can forward webhooks without a public address:
-`stripe listen --forward-to localhost:8080/api/billing/webhook` (use the `whsec_…` it prints).
-To go live, repeat steps 3–5 with live keys (`sk_live_…`); test and live mode have separate
-products, prices and webhooks. Remove the test price IDs from `.env` first, and afterwards unlink accounts
-from their test subscriptions with `python -m twapza.users clear-subscription --all`. Plan changes, cancelling, payment methods and invoices: the account
-page ("Manage subscription" opens Stripe's customer portal).
+To go live once Creem has approved your account: create a live key, put it in `.env` instead of the
+test key, remove the test product IDs, run `creem_setup` again (live mode has its own products),
+add the webhook in live mode, and unlink accounts from their test subscriptions with
+`python -m twapza.users clear-subscription --all`. Plan changes are charged (prorated) right away;
+payment methods, invoices and cancelling are in Creem's customer portal ("Manage subscription").
 
 **Password-reset emails** need an SMTP service (`TWAPZA_SMTP_*`); without one the reset link is
 written to the API log (`docker compose logs twapza-api`).
@@ -165,13 +158,13 @@ redirects `twapza.io` and plain `http://` to it, and stops publishing the unencr
 
    ```bash
    git clone <this repository> twapza && cd twapza
-   cp .env.example .env   # fill in ANTHROPIC_API_KEY, SMTP, Stripe; TWAPZA_DOMAIN=www.twapza.io
+   cp .env.example .env   # fill in ANTHROPIC_API_KEY, SMTP, Creem; TWAPZA_DOMAIN=www.twapza.io
    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
    ```
 
    After a minute https://www.twapza.io works (Caddy needs the DNS records from step 2 to get its
    certificate; `docker compose logs twapza-caddy` shows what it's doing).
-5. **Stripe webhook URL**: `https://www.twapza.io/api/billing/webhook` (see "Accounts and payments").
+5. **Creem webhook URL**: `https://www.twapza.io/api/billing/webhook` (see "Accounts and payments").
 6. **Email**: in your email service (Resend, Postmark, Brevo, ...) add twapza.io as a sending domain
    and create the DNS records it asks for (SPF/DKIM), so reset emails from `no-reply@twapza.io`
    don't land in spam.

@@ -1,4 +1,4 @@
-"""Paid plans through Stripe: checkout, plan changes, customer portal, webhook."""
+"""Paid plans through Creem: checkout, plan changes, customer portal, webhook."""
 
 import json
 import logging
@@ -6,10 +6,11 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlmodel import Session, select
 
-from twapza.accounts.billing import BillingError, Stripe, apply_subscription, get_billing, verify_signature
+from twapza.accounts.billing import BillingError, Creem, _id, apply_subscription, get_billing, verify_signature
 from twapza.accounts.plans import ACTIVE_STATUSES
+from twapza.accounts.users import account_read
 from twapza.api.deps import current_user
-from twapza.api.schemas import CheckoutRequest, UrlResponse
+from twapza.api.schemas import AccountRead, CheckoutRequest, UrlResponse
 from twapza.config import Settings, get_settings
 from twapza.db.models import User
 from twapza.db.session import get_session
@@ -20,37 +21,26 @@ router = APIRouter(prefix="/api/billing", tags=["billing"])
 
 NOT_SET_UP = "Payments aren't set up on this Twapza server yet."
 
-# Events that can change a subscription; for all of them we read the subscription from Stripe.
-SUBSCRIPTION_EVENTS = {
-    "checkout.session.completed",
-    "customer.subscription.created",
-    "customer.subscription.updated",
-    "customer.subscription.deleted",
-    "customer.subscription.paused",
-    "customer.subscription.resumed",
-}
+# Subscription statuses of someone who is (still) paying through Creem
+RUNNING = (ACTIVE_STATUSES - {"manual"}) | {"paused"}
 
 
-def billing_client(settings: Settings = Depends(get_settings)) -> Stripe | None:
+def billing_client(settings: Settings = Depends(get_settings)) -> Creem | None:
     """FastAPI dependency (replaced by a fake in tests)."""
     return get_billing(settings)
 
 
-def _require(billing: Stripe | None) -> Stripe:
+def _require(billing: Creem | None) -> Creem:
     if billing is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_SET_UP)
     return billing
 
 
-def _price(settings: Settings, plan: str, period: str) -> str:
-    price = settings.prices.get((plan, period))
-    if not price:
+def _product(settings: Settings, plan: str, period: str) -> str:
+    product = settings.prices.get((plan, period))
+    if not product:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_SET_UP)
-    return price
-
-
-# Subscription statuses of someone who is (still) paying through Stripe
-RUNNING = (ACTIVE_STATUSES - {"manual"}) | {"paused"}
+    return product
 
 
 def _has_subscription(user: User) -> bool:
@@ -61,33 +51,17 @@ def _account_url(settings: Settings, query: str = "") -> str:
     return f"{settings.public_url.rstrip('/')}/account{query}"
 
 
-@router.post("/checkout", response_model=UrlResponse)
-def checkout(body: CheckoutRequest, user: User = Depends(current_user), session: Session = Depends(get_session),
-             settings: Settings = Depends(get_settings),
-             billing: Stripe | None = Depends(billing_client)) -> UrlResponse:
-    """A Stripe Checkout page for the plan (taxes are added there)."""
-    billing = _require(billing)
-    if _has_subscription(user) or _found_running_subscription(session, user, billing, settings):
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "You already have a subscription. Change your plan on your account page.")
-    price = _price(settings, body.plan, body.period)
-    try:
-        url = billing.create_checkout(price_id=price, user=user,
-                                      success_url=_account_url(settings, "?upgraded=1"),
-                                      cancel_url=_account_url(settings, "#plans"), lang=body.lang)
-    except BillingError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
-    return UrlResponse(url=url)
-
-
-def _found_running_subscription(session: Session, user: User, billing: Stripe, settings: Settings) -> bool:
-    """Ask Stripe whether this account already pays (e.g. a webhook was lost or is still on its way),
+def _found_running_subscription(session: Session, user: User, billing: Creem, settings: Settings) -> bool:
+    """Ask Creem whether this account already pays (e.g. a webhook was lost or is still on its way),
     so nobody pays twice. If so, the account is updated from it."""
     try:
-        found = billing.find_subscriptions(user.id)
+        found = billing.find_subscriptions(user.email)
     except BillingError:
-        return False  # search unavailable: don't block buying
+        return False  # lookup unavailable: don't block buying
     for subscription in found:
+        owner = (subscription.get("metadata") or {}).get("user_id")
+        if owner not in (None, user.id):
+            continue  # same email, but bought for another Twapza account
         if subscription.get("status") in RUNNING and apply_subscription(user, subscription, settings):
             session.add(user)
             session.commit()
@@ -95,42 +69,59 @@ def _found_running_subscription(session: Session, user: User, billing: Stripe, s
     return False
 
 
-@router.post("/change-plan", response_model=UrlResponse)
-def change_plan(body: CheckoutRequest, user: User = Depends(current_user), settings: Settings = Depends(get_settings),
-                billing: Stripe | None = Depends(billing_client)) -> UrlResponse:
-    """A Stripe page where the customer confirms switching their subscription to another plan/period."""
+@router.post("/checkout", response_model=UrlResponse)
+def checkout(body: CheckoutRequest, user: User = Depends(current_user), session: Session = Depends(get_session),
+             settings: Settings = Depends(get_settings),
+             billing: Creem | None = Depends(billing_client)) -> UrlResponse:
+    """A Creem checkout page for the plan (taxes are added there)."""
     billing = _require(billing)
-    if not _has_subscription(user) or not user.customer_id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "You don't have a subscription to change.")
-    price = _price(settings, body.plan, body.period)
-    if price == user.price_id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "That's already your plan.")
+    if _has_subscription(user) or _found_running_subscription(session, user, billing, settings):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "You already have a subscription. Change your plan on your account page.")
+    product = _product(settings, body.plan, body.period)
     try:
-        url = billing.change_plan_url(subscription_id=user.subscription_id, customer_id=user.customer_id,
-                                      price_id=price, return_url=_account_url(settings, "?upgraded=1"),
-                                      lang=body.lang)
+        url = billing.create_checkout(product_id=product, user=user,
+                                      success_url=_account_url(settings, "?upgraded=1"))
     except BillingError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
     return UrlResponse(url=url)
 
 
+@router.post("/change-plan", response_model=AccountRead)
+def change_plan(body: CheckoutRequest, user: User = Depends(current_user), session: Session = Depends(get_session),
+                settings: Settings = Depends(get_settings),
+                billing: Creem | None = Depends(billing_client)) -> AccountRead:
+    """Switch the subscription to another plan/period. Creem prorates and charges the difference now."""
+    billing = _require(billing)
+    if not _has_subscription(user):
+        raise HTTPException(status.HTTP_409_CONFLICT, "You don't have a subscription to change.")
+    product = _product(settings, body.plan, body.period)
+    if product == user.price_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "That's already your plan.")
+    try:
+        subscription = billing.change_product(user.subscription_id, product)
+    except BillingError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
+    if subscription.get("id") and apply_subscription(user, subscription, settings):
+        session.add(user)
+        session.commit()
+    return account_read(session, user)
+
+
 @router.get("/portal", response_model=UrlResponse)
-def portal(lang: str = "en", user: User = Depends(current_user), settings: Settings = Depends(get_settings),
-           billing: Stripe | None = Depends(billing_client)) -> UrlResponse:
-    """Stripe's customer portal: payment method, invoices, plan changes, cancel."""
+def portal(user: User = Depends(current_user), billing: Creem | None = Depends(billing_client)) -> UrlResponse:
+    """Creem's customer portal: payment method, invoices, cancel."""
     billing = _require(billing)
     if not user.customer_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "You don't have a subscription yet.")
     try:
-        return UrlResponse(url=billing.portal(customer_id=user.customer_id, return_url=_account_url(settings),
-                                              lang=lang))
+        return UrlResponse(url=billing.portal(customer_id=user.customer_id))
     except BillingError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
 
 
-def _find_user(session: Session, obj: dict, subscription_id: str | None, customer_id: str | None) -> User | None:
-    metadata = obj.get("metadata") or {}
-    user_id = obj.get("client_reference_id") or metadata.get("user_id")
+def _find_user(session: Session, metadata: dict, subscription_id: str | None, customer_id: str | None) -> User | None:
+    user_id = metadata.get("user_id")
     if user_id and (user := session.get(User, str(user_id))):
         return user
     if subscription_id and (user := session.exec(select(User).where(User.subscription_id == subscription_id)).first()):
@@ -143,42 +134,43 @@ def _find_user(session: Session, obj: dict, subscription_id: str | None, custome
 @router.post("/webhook")
 async def webhook(request: Request, session: Session = Depends(get_session),
                   settings: Settings = Depends(get_settings),
-                  billing: Stripe | None = Depends(billing_client)) -> dict:
-    """Events from Stripe. Every subscription event is answered by reading the subscription
-    fresh from Stripe, so events arriving twice or out of order do no harm."""
+                  billing: Creem | None = Depends(billing_client)) -> dict:
+    """Events from Creem. Every subscription event is answered by reading the subscription fresh
+    from Creem, so events arriving twice or out of order do no harm."""
     body = await request.body()
-    secret = settings.stripe_webhook_secret.get_secret_value() if settings.stripe_webhook_secret else ""
-    if not verify_signature(body, request.headers.get("stripe-signature"), secret):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid signature.")
+    secret = settings.creem_webhook_secret.get_secret_value() if settings.creem_webhook_secret else ""
+    if not verify_signature(body, request.headers.get("creem-signature"), secret):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid signature.")
     try:
         event = json.loads(body)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON.") from None
-    kind = str(event.get("type") or "")
-    obj = (event.get("data") or {}).get("object") or {}
-    if kind not in SUBSCRIPTION_EVENTS:
-        return {"ok": True, "ignored": kind}
-    if kind == "checkout.session.completed":
-        if obj.get("mode") != "subscription" or not obj.get("subscription"):
+    kind = str(event.get("eventType") or "")
+    obj = event.get("object") or {}
+    if kind == "checkout.completed":
+        subscription_id = _id(obj.get("subscription"))
+        if not subscription_id:
             return {"ok": True, "ignored": "not a subscription checkout"}
-        subscription_id = str(obj["subscription"])
+        sub = obj.get("subscription")
+        metadata = obj.get("metadata") or (sub.get("metadata") if isinstance(sub, dict) else None) or {}
+    elif kind.startswith("subscription.") and obj.get("id"):
+        subscription_id = str(obj["id"])
+        metadata = obj.get("metadata") or {}
     else:
-        subscription_id = str(obj.get("id") or "")
-    customer = obj.get("customer")
-    customer_id = str(customer.get("id") if isinstance(customer, dict) else customer or "") or None
+        return {"ok": True, "ignored": kind}
 
-    user = _find_user(session, obj, subscription_id, customer_id)
+    user = _find_user(session, metadata, subscription_id, _id(obj.get("customer")))
     if user is None:
         log.warning("webhook %s for subscription %s: no matching user", kind, subscription_id)
         return {"ok": True, "ignored": "unknown user"}
     if billing is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_SET_UP)  # Stripe retries later
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_SET_UP)  # Creem retries later
     try:
         subscription = billing.get_subscription(subscription_id)
     except BillingError:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Couldn't read the subscription.") from None
     if user.subscription_id and user.subscription_id != subscription_id and _has_subscription(user) \
-            and subscription.get("status") not in ACTIVE_STATUSES:
+            and subscription.get("status") not in RUNNING:
         return {"ok": True, "ignored": "old subscription"}  # an earlier subscription ending
     if apply_subscription(user, subscription, settings):
         session.add(user)

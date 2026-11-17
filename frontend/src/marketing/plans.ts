@@ -1,6 +1,6 @@
 /**
- * Pricing plans shown on the website. Prices in USD; the real prices are the Stripe prices
- * (created by `python -m twapza.stripe_setup`). The limits themselves are enforced by the backend: backend/twapza/accounts/plans.py
+ * Pricing plans shown on the website. Prices in USD; the real prices are the Creem products
+ * (created by `python -m twapza.creem_setup`). The limits themselves are enforced by the backend: backend/twapza/accounts/plans.py
  * (keep the texts here in sync with it).
  */
 import { msg } from "../i18n";

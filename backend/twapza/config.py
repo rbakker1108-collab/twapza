@@ -89,29 +89,24 @@ class Settings(BaseSettings):
     smtp_from: str = "Twapza <no-reply@localhost>"
     smtp_starttls: bool = True
 
-    # Payments (Stripe). Without a secret key, paid plans can't be bought (plans can still be set
-    # by hand with `python -m twapza.users set-plan`). `python -m twapza.stripe_setup` creates the
-    # products, prices and portal settings and prints the values to put here.
-    stripe_secret_key: SecretStr | None = None
-    stripe_webhook_secret: SecretStr | None = None
-    # Stripe Managed Payments: Stripe is the merchant of record (handles VAT/sales tax, fraud,
-    # disputes). Turn off to sell as yourself with plain Stripe Billing.
-    stripe_managed_payments: bool = True
-    stripe_api_version: str = "2026-10-28.endive"
-    # Price IDs of the four subscription prices (price_...)
-    stripe_price_creator_monthly: str | None = None
-    stripe_price_creator_yearly: str | None = None
-    stripe_price_pro_monthly: str | None = None
-    stripe_price_pro_yearly: str | None = None
-    # Customer portal configuration (bpc_...) that allows switching between those prices
-    stripe_portal_configuration: str | None = None
+    # Payments (Creem, merchant of record: it sells to your customers and handles VAT/sales tax).
+    # Without an API key, paid plans can't be bought (plans can still be set by hand with
+    # `python -m twapza.users set-plan`). `python -m twapza.creem_setup` creates the products and
+    # prints the values to put here. A creem_test_… key talks to Creem's test environment.
+    creem_api_key: SecretStr | None = None
+    creem_webhook_secret: SecretStr | None = None
+    # Product IDs of the four subscription products (prod_…)
+    creem_product_creator_monthly: str | None = None
+    creem_product_creator_yearly: str | None = None
+    creem_product_pro_monthly: str | None = None
+    creem_product_pro_yearly: str | None = None
 
-    @field_validator("stripe_price_creator_monthly", "stripe_price_creator_yearly", "stripe_price_pro_monthly",
-                     "stripe_price_pro_yearly", "stripe_portal_configuration", mode="before")
+    @field_validator("creem_product_creator_monthly", "creem_product_creator_yearly", "creem_product_pro_monthly",
+                     "creem_product_pro_yearly", mode="before")
     @classmethod
-    def _clean_stripe_id(cls, value: object) -> object:
-        """Stripe IDs never contain spaces or '#': drop anything glued on, like a comment pasted onto
-        the same line in .env (``bpc_123# low | medium …``)."""
+    def _clean_product_id(cls, value: object) -> object:
+        """IDs never contain spaces or '#': drop anything glued on, like a comment pasted onto the
+        same line in .env (``prod_123# low | medium …``)."""
         if isinstance(value, str):
             value = value.split("#", 1)[0].strip()
             return value.split()[0] if value else None
@@ -119,16 +114,21 @@ class Settings(BaseSettings):
 
     @property
     def billing_enabled(self) -> bool:
-        return bool(self.stripe_secret_key and self.stripe_secret_key.get_secret_value())
+        return bool(self.creem_api_key and self.creem_api_key.get_secret_value())
+
+    @property
+    def creem_test_mode(self) -> bool:
+        key = self.creem_api_key.get_secret_value() if self.creem_api_key else ""
+        return key.startswith("creem_test_")
 
     @property
     def prices(self) -> dict[tuple[str, str], str]:
-        """(plan, period) -> Stripe price ID, for the ones that are configured."""
+        """(plan, period) -> Creem product ID, for the ones that are configured."""
         out = {
-            ("creator", "monthly"): self.stripe_price_creator_monthly,
-            ("creator", "yearly"): self.stripe_price_creator_yearly,
-            ("pro", "monthly"): self.stripe_price_pro_monthly,
-            ("pro", "yearly"): self.stripe_price_pro_yearly,
+            ("creator", "monthly"): self.creem_product_creator_monthly,
+            ("creator", "yearly"): self.creem_product_creator_yearly,
+            ("pro", "monthly"): self.creem_product_pro_monthly,
+            ("pro", "yearly"): self.creem_product_pro_yearly,
         }
         return {k: str(v).strip() for k, v in out.items() if v and str(v).strip()}
 

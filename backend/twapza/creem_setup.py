@@ -3,8 +3,8 @@
     python -m twapza.creem_setup              # uses TWAPZA_CREEM_API_KEY from .env
 
 Run it once with a test key (creem_test_…) and once with the live key. It prints the lines to put
-in .env. Running it again with the same key returns the products it created before (they are
-identified by an idempotency key), so it is safe to repeat.
+in .env. Running it again is safe: products that already exist (found by their `external_id`,
+e.g. `twapza_pro_monthly`) are reused instead of created twice.
 """
 
 import argparse
@@ -42,6 +42,11 @@ def create_all(creem: Creem, public_url: str, currency: str = "USD") -> dict[str
                 "metadata": {"twapza_plan": plan, "twapza_period": period},
             }, idempotency_key=key)
             env[f"TWAPZA_CREEM_PRODUCT_{plan.upper()}_{period.upper()}"] = product["id"]
+            if product.get("existing"):
+                changed = product.get("price") != spec[period] or product.get("status") == "archived"
+                print(f"{key}: already existed in Creem, reusing it"
+                      + (f" (NOTE: price {product.get('price')} / status {product.get('status')} differ; check it in "
+                         "the Creem dashboard)" if changed else ""), file=sys.stderr)
     return env
 
 

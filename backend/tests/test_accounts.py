@@ -659,3 +659,28 @@ def test_accounts_survive_the_v9_migration(isolated_env):
         assert u is not None and u.price_id == "123" and u.plan == "pro"
     with engine.connect() as conn:
         assert conn.execute(text("PRAGMA user_version")).scalar() == SCHEMA_VERSION
+
+
+def test_creem_setup_reuses_products_that_already_exist(capsys):
+    import httpx
+
+    from twapza.accounts.billing import Creem
+    from twapza.creem_setup import create_all
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/products" and request.method == "POST":
+            ext = json.loads(request.content)["external_id"]
+            if ext == "twapza_creator_monthly":
+                return httpx.Response(409, json={"status": 409, "code": "external_id_taken",
+                                                 "message": ["Another product in this store already uses this external_id."]})
+            return httpx.Response(200, json={"id": f"prod_new_{ext}"})
+        if request.url.path == "/v1/products/search":
+            assert request.url.params["external_id"] == "twapza_creator_monthly"
+            return httpx.Response(200, json={"items": [{"id": "prod_old_cm", "price": 1500, "status": "active"}]})
+        return httpx.Response(404)
+
+    env = create_all(Creem("creem_live", transport=httpx.MockTransport(handler)), "https://www.twapza.io")
+    assert env["TWAPZA_CREEM_PRODUCT_CREATOR_MONTHLY"] == "prod_old_cm"
+    assert env["TWAPZA_CREEM_PRODUCT_PRO_YEARLY"] == "prod_new_twapza_pro_yearly"
+    err = capsys.readouterr().err
+    assert "twapza_creator_monthly: already existed in Creem, reusing it" in err and "NOTE" not in err

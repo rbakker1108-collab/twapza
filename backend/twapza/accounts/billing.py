@@ -164,11 +164,22 @@ class Creem:
         """Cancel right away (used when an account is deleted)."""
         self._request("POST", f"/v1/subscriptions/{subscription_id}/cancel", json={"mode": "immediate"})
 
+    def find_product(self, external_id: str) -> dict | None:
+        """The product created earlier with this ``external_id`` (our own key), if any."""
+        items = self._request("GET", "/v1/products/search", params={"external_id": external_id}).get("items") or []
+        return items[0] if items else None
+
     def create_product(self, body: dict, idempotency_key: str) -> dict:
+        """Create a product, or return the existing one when ``external_id`` is already taken
+        (e.g. the setup ran before with this key). The result has ``existing: True`` then."""
         try:
             r = self.client.post("/v1/products", json=body, headers={"Idempotency-Key": idempotency_key})
         except httpx.HTTPError as exc:
             raise BillingError("Couldn't reach the payment provider. Try again in a minute.") from exc
+        if r.status_code == 409 and body.get("external_id"):
+            existing = self.find_product(body["external_id"])
+            if existing:
+                return existing | {"existing": True}
         if r.status_code >= 400:
             log.warning("Creem POST /v1/products -> %s: %s", r.status_code, r.text[:500])
             raise BillingError(f"Creem refused to create the product ({r.status_code}): {r.text[:300]}")

@@ -7,7 +7,7 @@ explicit input/output paths and never modifies its input.
 import json
 import subprocess
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -135,7 +135,10 @@ def run_ffmpeg(
         stderr = errfile.read()
     if returncode != 0:
         tail = "\n".join(stderr.strip().splitlines()[-5:])
-        raise MediaError(f"Video processing failed: {tail or 'unknown ffmpeg error'}")
+        if not tail and returncode in (-9, 137):
+            raise MediaError("Video processing was stopped by the system, most likely because it ran "
+                             "out of memory. Give Docker more memory (Settings → Resources) and try again.")
+        raise MediaError(f"Video processing failed: {tail or f'ffmpeg exited with code {returncode}'}")
     if on_progress:
         on_progress(1.0)
 
@@ -188,9 +191,10 @@ VERTICAL_SIZE = (1080, 1920)
 def vertical_filter(mode: str = "crop") -> str:
     """ffmpeg filter producing a 1080x1920 (9:16) frame for Shorts / TikTok / Reels.
 
-    ``crop``: take the largest centred 9:16 region and scale it to 1080x1920.
     ``blur``: fit the whole frame inside 1080x1920 over a blurred, zoomed copy of
-    itself (nothing is cut off; good for screen recordings and wide shots).
+    itself (nothing is cut off; the default).
+    ``bars``: fit the whole frame inside 1080x1920 with black bars above/below.
+    ``crop``: take the largest centred 9:16 region and scale it to 1080x1920.
     Expressions are evaluated on the decoded frames, so rotated phone videos work.
     """
     w, h = VERTICAL_SIZE
@@ -205,6 +209,9 @@ def vertical_filter(mode: str = "crop") -> str:
                 f"[fg]scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2"
                 f":flags=lanczos,setsar=1[fgo];"
                 f"[bgo][fgo]overlay=(W-w)/2:(H-h)/2")
+    if mode == "bars":
+        return (f"scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2"
+                f":flags=lanczos,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1")
     raise ValueError(f"unknown vertical mode: {mode!r}")
 
 
@@ -249,6 +256,83 @@ def cut_clip(src: Path, dst: Path, start: float, end: float, *, preset: str = "v
          "-c:a", "aac", "-b:a", "160k",
          "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", "-f", "mp4", str(dst)],
         duration=duration, on_progress=on_progress,
+    )
+
+
+def _frame_rate(fps: float | None) -> Fraction:
+    """The source frame rate as an exact fraction (29.97 → 30000/1001); 30 if unknown."""
+    if not fps or fps <= 0 or fps > 240:
+        return Fraction(30)
+    return Fraction(fps).limit_denominator(1001)
+
+
+def _runs(segments: list[tuple[float, float]]) -> list[list[tuple[float, float]]]:
+    """Split into runs that move forward through the source (a cold-open teaser starts a run)."""
+    runs: list[list[tuple[float, float]]] = []
+    for seg in segments:
+        if runs and seg[0] >= runs[-1][-1][1] - 1e-6:
+            runs[-1].append(seg)
+        else:
+            runs.append([seg])
+    return runs
+
+
+def cut_segments(src: Path, dst: Path, segments: Sequence[tuple[float, float]], *,
+                 has_audio: bool = True, fps: float | None = None, preset: str = "veryfast",
+                 crf: int = 20, video_filter: str | None = None,
+                 on_progress: ProgressCallback | None = None) -> None:
+    """Render ``segments`` (source ``(start, end)`` pairs, played in order) as one new mp4.
+
+    One segment is a plain ``cut_clip``. Otherwise each forward-moving run of segments is
+    one seeked input that is decoded once: ``select`` keeps the video frames inside the
+    segments (boundaries snapped to the frame grid so audio and video stay in sync) and
+    ``atrim`` cuts the audio exactly. Runs (e.g. a cold-open teaser, then the clip) are
+    joined with ``concat``. Nothing is buffered, so memory stays flat for long clips.
+    """
+    segments = [(float(a), float(b)) for a, b in segments if b - a > 0.01]
+    if not segments:
+        raise MediaError("Nothing to render: the clip is empty.")
+    if len(segments) == 1:
+        cut_clip(src, dst, *segments[0], preset=preset, crf=crf, video_filter=video_filter,
+                 on_progress=on_progress)
+        return
+
+    rate = _frame_rate(fps)
+    snap = lambda t: float(round(Fraction(t) * rate) / rate)  # noqa: E731 - to the frame grid
+    inputs: list[str] = []
+    graph: list[str] = []
+    joined: list[str] = []
+    total = 0.0
+    for r, run in enumerate(_runs(segments)):
+        base = run[0][0]
+        rel = [(snap(a - base), snap(b - base)) for a, b in run]
+        rel = [(a, b) for a, b in rel if b > a]
+        if not rel:
+            continue
+        span = rel[-1][1]
+        total += sum(b - a for a, b in rel)
+        inputs += ["-ss", f"{base:.3f}", "-t", f"{span + 0.5:.3f}", "-i", str(src)]
+        half = float(Fraction(1, 2) / rate)  # compare at frame midpoints: robust to rounding
+        keep = "+".join(f"between(t,{a - half:.6f},{b - half:.6f})" for a, b in rel)
+        graph.append(f"[{r}:v:0]fps={rate},select='{keep}',setpts=N/FRAME_RATE/TB[v{r}]")
+        joined.append(f"[v{r}]")
+        if has_audio:
+            graph.append(f"[{r}:a:0]asplit={len(rel)}" + "".join(f"[s{r}_{k}]" for k in range(len(rel))))
+            for k, (a, b) in enumerate(rel):
+                graph.append(f"[s{r}_{k}]atrim=start={a:.6f}:end={b:.6f},asetpts=PTS-STARTPTS[t{r}_{k}]")
+            graph.append("".join(f"[t{r}_{k}]" for k in range(len(rel)))
+                         + f"concat=n={len(rel)}:v=0:a=1[a{r}]")
+            joined.append(f"[a{r}]")
+    n = len(joined) // (2 if has_audio else 1)
+    out = "[vj][aout]" if has_audio else "[vj]"
+    graph.append(f"{''.join(joined)}concat=n={n}:v=1:a={1 if has_audio else 0}{out}")
+    graph.append(f"[vj]{video_filter or 'null'}[vout]")
+    audio = ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"] if has_audio else []
+    run_ffmpeg(
+        [*inputs, "-filter_complex", ";".join(graph), "-map", "[vout]", *audio,
+         "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
+         "-movflags", "+faststart", "-f", "mp4", str(dst)],
+        duration=total, on_progress=on_progress,
     )
 
 

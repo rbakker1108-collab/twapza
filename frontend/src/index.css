@@ -1,4 +1,69 @@
 @import "tailwindcss";
+/* Self-hosted fonts (no requests to Google: GDPR-friendly). Noto Sans Arabic covers Arabic. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/noto-sans-arabic";
+
+/* Twapza theme: near-black surfaces, orange brand. Components use these names
+   (bg-canvas, bg-surface, text-ink, text-muted, border-line, brand-500, …), so the
+   whole look is changed here. */
+@theme {
+  --font-sans: "Inter Variable", "Noto Sans Arabic Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: #09090b;
+  --color-surface: #131316;
+  --color-surface-2: #1b1b1f;
+  --color-surface-3: #27272c;
+  --color-line: #232328;
+  --color-line-strong: #34343b;
+  --color-ink: #f6f5f4;
+  --color-ink-soft: #d8d5d2;
+  --color-muted: #a1a1aa;
+  --color-faint: #71717a;
+
+  --color-brand-50: #fff5ed;
+  --color-brand-100: #ffe6d1;
+  --color-brand-200: #ffc9a1;
+  --color-brand-300: #ffa766;
+  --color-brand-400: #ff8a3d;
+  --color-brand-500: #ff6b0f;
+  --color-brand-600: #e85a00;
+  --color-brand-700: #bf4800;
+  --color-brand-800: #973a06;
+  --color-brand-900: #7a320b;
+  --color-brand-950: #421603;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand-500) 45%, transparent);
+  }
+  option {
+    background: var(--color-surface-2);
+  }
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+}
+
+/* Orange-to-amber accent for headings ("viral Shorts"). */
+@utility text-gradient-brand {
+  background: linear-gradient(90deg, var(--color-brand-400), #ffb547);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 
 /* Caption fonts, served by the API (same files the export uses). */
 @font-face { font-family: "Twapza Montserrat"; src: url("/api/fonts/Montserrat-ExtraBold.ttf"); font-display: swap; }

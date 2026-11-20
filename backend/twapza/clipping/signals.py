@@ -71,6 +71,28 @@ def energy_from_wav(path: Path, window: float = 0.5) -> EnergyProfile:
     return EnergyProfile(window=window, db=np.concatenate(parts) if parts else np.zeros(0))
 
 
+def loudness_between(path: Path, start: float, end: float,
+                     window: float = 0.25) -> Callable[[float, float], float]:
+    """Read only ``[start, end]`` of a 16-bit mono WAV; returns ``f(s, e)`` = mean dBFS of that span."""
+    with wave.open(str(path), "rb") as wav:
+        if wav.getnchannels() != 1 or wav.getsampwidth() != 2:
+            raise ValueError("expected 16-bit mono WAV")
+        rate = wav.getframerate()
+        first = max(0, min(wav.getnframes(), int(start * rate)))
+        wav.setpos(first)
+        raw = wav.readframes(max(0, int((end - start) * rate)))
+    profile = energy_from_samples(np.frombuffer(raw, dtype="<i2") / 32768.0, rate, window)
+    offset = first / rate
+
+    def mean_db(s: float, e: float) -> float:
+        i0 = max(0, int((s - offset) / window))
+        i1 = min(profile.db.size, max(i0 + 1, int(np.ceil((e - offset) / window))))
+        part = profile.db[i0:i1]
+        return float(part.mean()) if part.size else -120.0
+
+    return mean_db
+
+
 # --- scene changes ----------------------------------------------------------------
 
 def detect_scene_cuts(video_path: Path, *, duration: float | None = None,

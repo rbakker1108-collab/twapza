@@ -9,3 +9,4 @@ SIL Open Font License 1.1 (see the `OFL-*.txt` files), which permits redistribut
 | Poppins-ExtraBold.ttf | Poppins ExtraBold | github.com/google/fonts (ofl/poppins) |
 | Anton-Regular.ttf | Anton | github.com/google/fonts (ofl/anton) |
 | BebasNeue-Regular.ttf | Bebas Neue | github.com/google/fonts (ofl/bebasneue) |
+| NotoSansArabic-ExtraBold.ttf | Noto Sans Arabic ExtraBold | github.com/notofonts/arabic (used automatically for Arabic text) |

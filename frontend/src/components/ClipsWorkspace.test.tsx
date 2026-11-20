@@ -32,22 +32,47 @@ describe("ClipsWorkspace", () => {
     expect(screen.getByText("1 clip")).toBeVisible();
   });
 
-  it("defaults to vertical 9:16 crop and shares the format with both tabs", async () => {
+  it("defaults to vertical 9:16 showing the whole frame and shares the format with both tabs", async () => {
     render(<ClipsWorkspace project={makeProject()} config={makeConfig()} />);
     expect(screen.getByRole("radio", { name: /vertical 9:16/i })).toBeChecked();
-    expect(screen.getByRole("radio", { name: /crop to center/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /blurred background/i })).toBeChecked();
+    await userEvent.click(screen.getByRole("checkbox", { name: /subtitles/i })); // captions off
     await screen.findByText("Hot take");
     await zipIn(screen.getByText(/highlight, best first/).closest("section")!);
     await waitFor(() =>
-      expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", { aspect: "9:16", vertical_fit: "crop", upscale_1080: false, captions: null }),
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", {
+        aspect: "9:16", vertical_fit: "blur", upscale_1080: false, captions: null,
+        hook_text: false, cold_open: false, cut_pauses: false,
+        hook_full: false, cut_fillers: false, progress_bar: false,
+      }),
     );
 
-    await userEvent.click(screen.getByRole("radio", { name: /blurred background/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /black bars/i }));
+    expect(screen.getAllByTestId("clip-frame")[0]).toHaveClass("bg-black");
     await simpleTab();
     await zipIn(screen.getByText("1 clip").closest("section")!);
     await waitFor(() =>
-      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple", expect.objectContaining({ vertical_fit: "blur" })),
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "simple", expect.objectContaining({ vertical_fit: "bars" })),
     );
+  });
+
+  it("offers optional retention boosts, all off by default", async () => {
+    render(<ClipsWorkspace project={makeProject()} config={makeConfig()} />);
+    for (const name of [/hook text/i, /cold open/i, /cut pauses/i]) {
+      expect(screen.getByRole("checkbox", { name })).not.toBeChecked();
+    }
+    await userEvent.click(screen.getByRole("checkbox", { name: /cold open/i }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /cut pauses/i }));
+    await screen.findByText("Hot take");
+    await zipIn(screen.getByText(/highlight, best first/).closest("section")!);
+    await waitFor(() =>
+      expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", expect.objectContaining({
+        hook_text: false, cold_open: true, cut_pauses: true,
+      })),
+    );
+    // The .srt link follows the same timeline as the download.
+    const srt = screen.getAllByRole("link", { name: "Subtitles (.srt)" })[0];
+    expect(srt).toHaveAttribute("href", expect.stringContaining("cut_pauses=true&cold_open=true"));
   });
 
   it("offers 1080p upscaling only for original format on low-res videos", async () => {

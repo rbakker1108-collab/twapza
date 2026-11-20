@@ -40,7 +40,7 @@ def with_key(monkeypatch):
 @pytest.fixture
 def highlighter(monkeypatch):
     fake = FakeHighlighter()
-    monkeypatch.setattr("twapza.workers.tasks.get_highlighter", lambda: fake)
+    monkeypatch.setattr("twapza.workers.tasks.get_highlighter", lambda **kw: fake)
     return fake
 
 
@@ -135,7 +135,7 @@ def test_trim_validation(client, project, with_key, highlighter, body, status):
 
 def test_readable_failures(client, project, with_key, monkeypatch):
     nothing = FakeHighlighter(answers=lambda chunk: '{"clips": []}')
-    monkeypatch.setattr("twapza.workers.tasks.get_highlighter", lambda: nothing)
+    monkeypatch.setattr("twapza.workers.tasks.get_highlighter", lambda **kw: nothing)
     job = run_ai(client, project["id"])
     assert job["status"] == "failed" and "didn't find any moments" in job["error"]
 
@@ -143,7 +143,7 @@ def test_readable_failures(client, project, with_key, monkeypatch):
 
     def boom(chunk):
         raise HighlightError("The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in .env.")
-    monkeypatch.setattr("twapza.workers.tasks.get_highlighter", lambda: FakeHighlighter(answers=boom))
+    monkeypatch.setattr("twapza.workers.tasks.get_highlighter", lambda **kw: FakeHighlighter(answers=boom))
     job = run_ai(client, project["id"])
     assert job["status"] == "failed" and "API key was rejected" in job["error"]
 

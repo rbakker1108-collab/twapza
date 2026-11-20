@@ -1,21 +1,35 @@
 # Twapza
 
-Turn your own long-form videos (podcasts, talks, streams, interviews) into short clips for
-YouTube Shorts, TikTok and Instagram Reels.
+Turn your long-form YouTube videos (podcasts, talks, streams, interviews) into viral
+YouTube Shorts (and TikTok / Instagram Reels). Paste a link to your video, or upload the file.
 
 - **AI highlights:** Claude reads the transcript and picks the strongest standalone moments
   (strong hooks, emotional peaks, surprises, humour, clear takeaways), refined with audio
   energy and scene changes, ranked by score. Trim any clip with a slider.
 - **Simple clips:** split the whole video into clips of ~N seconds (15–180), with every cut
   snapped to a natural pause or sentence end.
-- **Vertical 1080×1920** (centre crop, or fit over a blurred background) or the original shape,
-  with optional 1080p upscaling of low-resolution sources.
-- **Burned-in captions** with word-by-word highlighting: four bundled fonts, your colours,
-  size, position and words on screen.
+- **Vertical 1080×1920** showing the whole picture scaled to fit (over a blurred background or
+  black bars), or a centre crop, or the original shape with optional 1080p upscaling.
+- **Subtitles**, on by default: burned in with word-by-word highlighting (four bundled fonts,
+  your colours, size, position and words on screen), plus a `.srt` file per clip.
+- **YouTube descriptions** for each clip: Claude writes a hook and hashtags, and Twapza adds a
+  credit to the original creator (name, video and channel links), ready to copy.
+- **Optional retention boosts** for each download: **hook text** (the title in bold on the first
+  3 seconds), **cold open** (start with the clip's most gripping line as a teaser) and **cut pauses**
+  (remove silences for snappier pacing). Plus **title ideas** and a **short & loopable** AI mode
+  (20–45 s moments that replay smoothly).
+- **Clip editor:** drag your own texts onto the video (font, size, colour, outline or box, whole clip
+  or from–to), and fix words the transcription got wrong; what you see is what you download.
+- **Remove filler words** ("um", "uh"), a **progress bar**, hook text for the **whole clip**, and
+  **Look for…** to tell the AI what kind of moments you want. Your download settings are remembered.
 - Download clips one by one or all at once as a ZIP.
+- The interface is available in **English, Nederlands, Español, Deutsch, Français and العربية**
+  (pick it in the top bar). Videos can be in any language Whisper knows (it detects it); subtitles,
+  titles and descriptions follow the video's language, Arabic included (right-to-left, own font).
 
-Twapza only works with videos **you upload yourself** (mp4, mov or mkv, up to 3 hours and
-20 GB). Before uploading you confirm that you own the video or have permission to use it.
+Twapza is for **your own** videos: paste a link to a single YouTube video you posted (public or
+unlisted), or upload a file (mp4, mov or mkv, up to 20 GB). Videos can be up to 3 hours long.
+Either way you first confirm that you own the video or have permission to use it.
 Your original file is never modified, and everything is deleted automatically after
 24 hours (or immediately, with **Delete** on the home page).
 
@@ -36,21 +50,148 @@ cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open **<http://localhost:8080>**. Stop with `Ctrl+C` or `docker compose down`.
+Open **<http://localhost:8080>** for the website (features, pricing, guides) and
+**<http://localhost:8080/app>** for the app itself (create an account the first time). Stop with `Ctrl+C` or `docker compose down`.
 Your projects survive restarts (they live in the `twapza-data` Docker volume until they expire).
 
 The first transcription downloads the Whisper model (`small`, ~500 MB) once.
 
 ## Using Twapza
 
-1. **Upload:** drop a video, tick the ownership box, click **Upload**. Large uploads can be
-   paused; choosing the same file again resumes where it stopped (even after a reload).
+1. **Paste a YouTube link** (e.g. `https://youtu.be/…`), tick the ownership box, click
+   **Import from YouTube**. Or switch to **Upload a file**: drop a video and click **Upload**
+   (large uploads can be paused; choosing the same file again resumes, even after a reload).
 2. Twapza builds a preview and **transcribes** the video in the background (progress is shown).
-3. Pick a **download format** (vertical crop / blurred fit / original; captions on or off).
-4. **AI highlights** tab → **Find highlights** → review the ranked list, play, **Trim**,
-   **Download** (or **Download all (ZIP)**).
+3. Pick a **download format**: vertical with blurred background (default), black bars or centre
+   crop, or the original shape; subtitles on (default) or off, and their style. Optionally tick
+   **Hook text**, **Cold open** and/or **Cut pauses** (all off by default; try them on a few Shorts
+   and compare "Viewed vs. swiped away" in YouTube Studio).
+4. **AI highlights** tab → optionally fill in **Look for** (e.g. "funny moments") → **Find highlights**
+   (tick **Short & loopable** for 20–45 s moments) → review the ranked list, play, **Trim**,
+   **Edit & download**: the editor plays the clip with its subtitles; add the hook text, drag your
+   own texts onto the video, fix caption words, change the format and style, then **Download**.
+   (**Quick download** skips the editor; **Download all (ZIP)** gets every clip.) **Subtitles (.srt)** gives a subtitle file to
+   upload alongside the Short. **Description** gives a ready-to-paste YouTube description and title ideas;
+   With **Hook text** ticked, each clip shows its hook text (edit it, or **Suggest** for Claude's
+   title ideas) and previews it on the clip, so you set it before downloading.
+   The credit at the bottom comes from **Original creator** on the project page: filled in
+   automatically for YouTube links, and editable (fill it in yourself for uploaded files).
    **Simple clips** tab → choose a length → **Generate clips**.
-5. Long-running steps can be **canceled**. Your recent projects are listed on the home page.
+5. Long-running steps can be **canceled**. Your recent projects are listed on the app's home page (`/app`).
+
+The interface is available in English, Dutch, Spanish, German, French and Arabic (language menu at the
+top). Captions work for any language Whisper recognises (it detects the spoken language automatically);
+Arabic captions are drawn right-to-left with a bundled Arabic font.
+
+## Accounts and payments
+
+People sign up with an email address and password (`/signup`); the app (`/app`) needs a login and
+everyone only sees their own projects. Plans and their limits (`backend/twapza/accounts/plans.py`):
+
+| | Free | Creator | Pro |
+|---|---|---|---|
+| Video minutes per month | 60 | 300 | 1,200 |
+| Longest video | 1 h | 2 h | 3 h |
+| Watermark ("Made with Twapza") | yes | no | no |
+| Hook text, own texts, caption fixes, cut pauses/fillers, cold open, AI descriptions | no | yes | yes |
+| Download all clips (ZIP) | no | no | yes |
+| Priority rendering (own queue) | no | no | yes |
+
+A video's length counts towards the month when it has been processed (deleting it doesn't give the
+minutes back). Months start on the day you signed up or subscribed.
+
+**Payments** go through [Creem](https://www.creem.io/), a merchant of record: Creem sells to your
+customers and handles VAT/sales tax worldwide, and accepts individuals (no company registration
+needed on their side; check yourself whether Dutch law asks you to register at the KvK). Fees are
+about 3.9% + $0.40 per sale. To switch it on:
+
+1. Create a Creem account and store. Your account is reviewed before you can take live payments;
+   start in **test mode** (switch in the dashboard).
+2. **Developers → API keys**: create a test key (`creem_test_…`) and put it in `.env` as
+   `TWAPZA_CREEM_API_KEY` (only in `.env` on the server; never in chat, email or git). Restart.
+3. Create the four products (Creator $15/month or $144/year, Pro $29/month or $276/year, prices
+   excluding tax, tax category SaaS) and paste the printed lines into `.env`:
+
+   ```bash
+   docker compose exec twapza-api python -m twapza.creem_setup
+   ```
+
+   (Change prices in `twapza/creem_setup.py` *and* `frontend/src/marketing/plans.ts`.)
+4. **Developers → Webhooks**: add `https://<your domain>/api/billing/webhook` (all events is fine)
+   and copy its secret into `TWAPZA_CREEM_WEBHOOK_SECRET`.
+5. Restart (`docker compose … up -d`). Test with card `4111 1111 1111 1111`, any future date, any CVC.
+
+To go live once Creem has approved your account: create a live key, put it in `.env` instead of the
+test key, remove the test product IDs, run `creem_setup` again (live mode has its own products),
+add the webhook in live mode, and unlink accounts from their test subscriptions with
+`python -m twapza.users clear-subscription --all`. Plan changes are charged (prorated) right away;
+payment methods, invoices and cancelling are in Creem's customer portal ("Manage subscription").
+
+**Password-reset emails** need an SMTP service (`TWAPZA_SMTP_*`); without one the reset link is
+written to the API log (`docker compose logs twapza-api`).
+
+**Managing accounts** on the server:
+
+```bash
+docker compose exec twapza-api python -m twapza.users list
+docker compose exec twapza-api python -m twapza.users set-plan someone@example.com pro   # free plan for friends/testers
+docker compose exec twapza-api python -m twapza.users delete someone@example.com
+```
+
+**Before you open it to the public**: run it with HTTPS on your domain (see "Going live" below), set
+up backups of the `twapza-data` volume (the database now holds accounts), and publish terms and a
+privacy policy.
+
+## Monitoring and protection
+
+- **Claude costs.** Set a monthly spend limit in the Anthropic console (Settings → Limits). Inside
+  Twapza, each account can make a limited number of AI requests per day (finding highlights, writing
+  descriptions): Free 10, Creator 60, Pro 200 (`backend/twapza/accounts/plans.py`).
+- **Email confirmation.** New accounts must click the link in the welcome email before they can add
+  videos (`TWAPZA_EMAIL_VERIFICATION`, on by default; needs the SMTP settings).
+- **Uptime.** Point a free uptime monitor (e.g. UptimeRobot) at `https://<your domain>/api/health`. It
+  answers 200 when the API, database and job queue work, and 503 when one of them is down.
+- **Errors.** Create a free Sentry project (choose the EU region) or a GlitchTip project and put its DSN
+  in `TWAPZA_SENTRY_DSN`. Crashes in the API, workers and scheduler are then reported with technical
+  details only (no videos, request bodies or personal data). Expected problems, like a video that is
+  too long for the plan, are not reported.
+
+## Going live on www.twapza.io
+
+`docker-compose.prod.yml` puts [Caddy](https://caddyserver.com/) in front of Twapza: it serves
+**https://www.twapza.io** with a free Let's Encrypt certificate (fetched and renewed automatically),
+redirects `twapza.io` and plain `http://` to it, and stops publishing the unencrypted port 8080.
+
+1. **Rent a server**: any Linux VPS with Docker, e.g. Hetzner (CPX31/CX32, 4 vCPU / 8 GB RAM, about
+   €10-15 a month) or DigitalOcean. Transcription runs on the CPU, so more cores = faster; 8 GB RAM
+   is the comfortable minimum. Give it enough disk for a day of uploads (80 GB+).
+2. **Point the domain at it**: at the company where you bought twapza.io, add two DNS records:
+   `A  @    <server IP>` and `A  www  <server IP>` (plus `AAAA` records if the server has IPv6).
+3. **Open only ports 22, 80 and 443** in the server's firewall.
+4. On the server:
+
+   ```bash
+   git clone <this repository> twapza && cd twapza
+   cp .env.example .env   # fill in ANTHROPIC_API_KEY, SMTP, Creem; TWAPZA_DOMAIN=www.twapza.io
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+   ```
+
+   After a minute https://www.twapza.io works (Caddy needs the DNS records from step 2 to get its
+   certificate; `docker compose logs twapza-caddy` shows what it's doing).
+5. **Creem webhook URL**: `https://www.twapza.io/api/billing/webhook` (see "Accounts and payments").
+6. **Email**: in your email service (Resend, Postmark, Brevo, ...) add twapza.io as a sending domain
+   and create the DNS records it asks for (SPF/DKIM), so reset emails from `no-reply@twapza.io`
+   don't land in spam.
+7. **Backups**: the `twapza-data` volume holds the database with all accounts; copy
+   `/data/twapza.db` off the server daily (e.g. your VPS provider's backup option).
+
+Update later with `git pull` and the same `up -d --build` command.
+
+## Website
+
+The marketing pages live in `frontend/src/marketing/` (`/`, `/features`, `/solutions`, `/pricing`,
+`/resources`). Emails collected by the earlier early-access form stay in the database; export or
+remove them with `python -m twapza.waitlist` (`--remove EMAIL`).
 
 ## Configuration
 
@@ -66,6 +207,8 @@ All settings live in `.env` (see `.env.example` for every option). The most usef
 | `TWAPZA_MAX_UPLOAD_GB` | `20` | Largest upload. |
 | `TWAPZA_MAX_DURATION_MIN` | `180` | Longest video. |
 | `TWAPZA_RETENTION_HOURS` | `24` | How long projects are kept. |
+| `TWAPZA_YOUTUBE_ENABLED` | `true` | Show the "Paste a YouTube link" option. |
+| `TWAPZA_YOUTUBE_MAX_HEIGHT` | `1080` | Highest resolution downloaded from YouTube. |
 | `TWAPZA_MAX_HIGHLIGHTS` | `30` | Most AI highlights shown per video. |
 | `TWAPZA_EXPORT_PRESET` / `TWAPZA_EXPORT_CRF` | `veryfast` / `20` | Export speed/quality (x264). |
 
@@ -73,7 +216,8 @@ After changing `.env`, restart: `docker compose down && docker compose up`.
 
 ## Costs
 
-Only **AI highlights** cost money (Claude API, billed by Anthropic to your Console account).
+Only **AI highlights** and **AI descriptions** cost money (Claude API, billed by Anthropic to your
+Console account). A description is one small request (roughly 1–2 cents at most).
 Uploading, transcription, simple clips, cropping, captions and downloads all run locally for free.
 With the default model we estimate roughly **$0.20–0.60 per hour of video** per run (an
 estimate from token counts; check your Console for real figures). `TWAPZA_CLAUDE_EFFORT=medium`
@@ -107,11 +251,21 @@ tested on GPU hardware yet; if it fails to start, the CPU setup above always wor
 | A job says "Twapza stopped while this was running" | The worker restarted mid-job; just run it again. |
 | "The server ran out of disk space" | Delete projects from the home page, or free space for Docker. |
 | Upload interrupted | Choose the same file again; it resumes. |
+| YouTube import fails ("blocking automated downloads", or a format error) | YouTube changes often. Update the downloader: `docker compose build --no-cache && docker compose up`. If it still fails, download the video from YouTube Studio and upload the file. |
+| "This video is private" / "requires sign-in" | Make the video public or unlisted for the import, or upload the file. |
+| "Twapza's server isn't responding" / 502 errors | Check `docker compose ps` (is `twapza-api` running?) and `docker compose logs --tail=50 twapza-api`. Restarting helps: `docker compose restart`. |
 | See what's happening | `docker compose logs -f twapza-worker` |
+
+## About YouTube imports
+
+Importing uses [yt-dlp](https://github.com/yt-dlp/yt-dlp). Only import videos you own or have
+permission to use. YouTube's Terms of Service restrict downloading, so check they allow your use;
+downloading your own uploads from [YouTube Studio](https://studio.youtube.com) and using
+**Upload a file** is always an option.
 
 ## How it works
 
-React frontend → FastAPI API → Redis/RQ job queue → worker (ffmpeg, faster-whisper, Claude,
+React frontend → FastAPI API → Redis/RQ job queue → worker (yt-dlp, ffmpeg, faster-whisper, Claude,
 PySceneDetect, libass) → files on local disk, metadata in SQLite. A scheduler deletes expired
 projects and recovers jobs whose worker died. See [CLAUDE.md](CLAUDE.md) for the architecture,
 conventions and how to develop without Docker.

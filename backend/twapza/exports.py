@@ -20,19 +20,39 @@ class ExportSettings(BaseModel):
     # "9:16" = vertical 1080x1920 for YouTube Shorts / TikTok / Reels.
     # Stage 4 adds caption options.
     aspect: Literal["original", "9:16"] = "original"
-    # How landscape footage fills the vertical frame (only used for "9:16").
-    vertical_fit: Literal["crop", "blur"] = "crop"
+    # How landscape footage fills the vertical frame (only used for "9:16"):
+    # "blur"/"bars" show the whole frame scaled down; "crop" fills the screen from the centre.
+    vertical_fit: Literal["blur", "bars", "crop"] = "blur"
     # Upscale clips whose shorter side is below 1080 px to 1080p (only used for
     # "original"; vertical exports are always 1080x1920).
     upscale_1080: bool = True
     # Burned-in word-by-word captions; None = no captions.
     captions: CaptionSettings | None = None
+    # Optional retention boosts (all off by default):
+    # the clip's title as bold text at the top for the first 3 seconds,
+    hook_text: bool = False
+    # its most gripping line played first as a 1.5-6 s teaser,
+    cold_open: bool = False
+    # and silences between words shortened (jump cuts).
+    cut_pauses: bool = False
+    # Show the hook text for the whole clip instead of the first 3 seconds.
+    hook_full: bool = False
+    # Cut out "um", "uh", … (with the silence around them).
+    cut_fillers: bool = False
+    # A thin bar along the top that fills up as the clip plays.
+    progress_bar: bool = False
+    # Set by the server from the account's plan (whatever the browser sends):
+    # a small "Twapza" mark (Free plan),
+    watermark: bool = False
+    # and whether texts placed in the clip editor are burned in (Creator and up).
+    texts: bool = True
 
     def normalized(self) -> "ExportSettings":
         """Drop options that don't affect the output, so equal outputs share a cache key."""
+        out = self.model_copy(update={"hook_full": self.hook_full and self.hook_text})
         if self.aspect == "9:16":
-            return self.model_copy(update={"upscale_1080": False})
-        return self.model_copy(update={"vertical_fit": "crop"})
+            return out.model_copy(update={"upscale_1080": False})
+        return out.model_copy(update={"vertical_fit": "blur"})
 
 
 def video_filter(settings: ExportSettings, width: int, height: int) -> str | None:
@@ -57,7 +77,14 @@ def output_size(settings: ExportSettings, width: int, height: int) -> tuple[int,
 
 
 def export_key(clip: Clip, settings: ExportSettings) -> str:
+    # The hook text and the teaser come from the clip, so they are part of the key too.
     fingerprint = f"{clip.start:.3f}|{clip.end:.3f}|{settings.normalized().model_dump_json()}"
+    if settings.hook_text:
+        fingerprint += f"|hook={clip.title or ''}"
+    if settings.cold_open:
+        fingerprint += f"|teaser={clip.teaser or ''}"
+    if clip.overlays and clip.overlays != "[]":
+        fingerprint += f"|overlays={clip.overlays}"
     digest = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
     return f"{clip.exports_prefix}{digest}.mp4"
 

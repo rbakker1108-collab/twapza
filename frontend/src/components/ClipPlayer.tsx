@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 
+import { useT } from "../i18n";
+
 /** How the preview is framed: as uploaded, or approximating a 9:16 export. */
-export type PreviewFrame = "original" | "crop" | "blur";
+export type PreviewFrame = "original" | "crop" | "blur" | "bars";
 
 interface Props {
   src: string;
@@ -9,15 +11,19 @@ interface Props {
   end: number;
   poster?: string;
   frame?: PreviewFrame;
+  /** Preview of the hook text the download will show on its first seconds. */
+  hookText?: string | null;
 }
 
 /**
  * Plays only [start, end] of a longer video. The video isn't loaded until the
  * user clicks play, so a grid of many clips stays light. For vertical framing,
  * CSS mimics the export: `object-cover` = centre crop, `object-contain` over a
- * blurred copy of the thumbnail = fit with blurred background.
+ * blurred copy of the thumbnail = fit with blurred background, `object-contain` on
+ * black = fit with black bars.
  */
-export function ClipPlayer({ src, start, end, poster, frame = "original" }: Props) {
+export function ClipPlayer({ src, start, end, poster, frame = "original", hookText }: Props) {
+  const t = useT();
   const ref = useRef<HTMLVideoElement>(null);
   const [active, setActive] = useState(false);
   const vertical = frame !== "original";
@@ -32,7 +38,8 @@ export function ClipPlayer({ src, start, end, poster, frame = "original" }: Prop
   return (
     <div
       data-testid="clip-frame"
-      className={`relative w-full overflow-hidden rounded-lg bg-slate-900 ${vertical ? "aspect-[9/16]" : "aspect-video"}`}
+      dir="ltr"
+      className={`relative w-full overflow-hidden rounded-lg ${frame === "bars" ? "bg-black" : "bg-black"} ${vertical ? "aspect-[9/16]" : "aspect-video"}`}
     >
       {frame === "blur" && poster && (
         <img src={poster} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-80 blur-xl" />
@@ -60,7 +67,7 @@ export function ClipPlayer({ src, start, end, poster, frame = "original" }: Prop
       ) : (
         <button
           type="button"
-          aria-label="Play clip"
+          aria-label={t("Play clip")}
           onClick={() => setActive(true)}
           className="group absolute inset-0 block h-full w-full"
         >
@@ -73,6 +80,16 @@ export function ClipPlayer({ src, start, end, poster, frame = "original" }: Prop
             </span>
           </span>
         </button>
+      )}
+      {hookText && (
+        <span
+          data-testid="hook-preview"
+          className="pointer-events-none absolute inset-x-[9%] top-[12%] text-center leading-tight"
+        >
+          <span className="box-decoration-clone rounded bg-black/80 px-1.5 py-0.5 text-[11px] font-extrabold text-white sm:text-xs">
+            {hookText}
+          </span>
+        </span>
       )}
     </div>
   );

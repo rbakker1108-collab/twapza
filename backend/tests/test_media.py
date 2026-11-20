@@ -129,7 +129,7 @@ def test_upscale_respects_rotation_flag(tmp_path):
     assert (up.width, up.height) == (1080, 1920)
 
 
-@pytest.mark.parametrize("mode", ["crop", "blur"])
+@pytest.mark.parametrize("mode", ["crop", "blur", "bars"])
 @pytest.mark.parametrize("size", ["1280x720", "640x360", "320x240", "1080x1920", "300x300", "854x480"])
 def test_vertical_export_is_always_1080x1920(tmp_path, mode, size):
     src = make_test_video(tmp_path / "in.mp4", seconds=2, size=size)
@@ -179,6 +179,15 @@ def test_vertical_blur_keeps_the_whole_frame(tmp_path):
     # red on the left, green centre, blue on the right.
     left, centre, right = (_frame_rgb(out, x, 960) for x in (60, 540, 1020))
     assert left[0] > 150 and centre[1] > 100 and right[2] > 150, (left, centre, right)
+
+
+def test_vertical_bars_keeps_the_whole_frame_on_black(tmp_path):
+    src = _split_colour_video(tmp_path / "split.mp4")
+    out = tmp_path / "v.mp4"
+    ffmpeg.cut_clip(src, out, 0, 0.5, preset="ultrafast", video_filter=ffmpeg.vertical_filter("bars"))
+    left, centre, right = (_frame_rgb(out, x, 960) for x in (60, 540, 1020))
+    assert left[0] > 150 and centre[1] > 100 and right[2] > 150, (left, centre, right)
+    assert max(_frame_rgb(out, 540, 100)) < 30  # black bar above the video
 
 
 def test_vertical_rejects_unknown_mode():

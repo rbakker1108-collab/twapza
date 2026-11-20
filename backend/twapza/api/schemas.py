@@ -1,10 +1,52 @@
+import json
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from twapza.exports import ExportSettings
 
 from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
+
+
+class CreateImport(BaseModel):
+    url: str = Field(min_length=1, max_length=500)
+    rights_confirmed: bool
+
+
+class WaitlistRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    lang: Literal["en", "nl", "es", "de", "fr", "ar"] = "en"
+
+
+class UpdateCredit(BaseModel):
+    """Who made the original video (shown as a credit in clip descriptions). Empty = none."""
+    source_title: str | None = Field(default=None, max_length=300)
+    source_channel: str | None = Field(default=None, max_length=200)
+    source_url: str | None = Field(default=None, max_length=500)
+    source_channel_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def _blank_is_none(cls, value: str | None) -> str | None:
+        value = " ".join(value.split()) if value else ""
+        return value or None
+
+    @field_validator("source_url", "source_channel_url", mode="after")
+    @classmethod
+    def _http_url(cls, value: str | None) -> str | None:
+        if value and not value.lower().startswith(("https://", "http://")):
+            raise ValueError("must be a link starting with https://")
+        return value
+
+
+class ClipDescription(BaseModel):
+    text: str               # ready to paste: description, credit, hashtags
+    description: str
+    hashtags: list[str]
+    titles: list[str]       # suggested Shorts titles (also usable as the hook text)
+    credit: str | None
+    ai: bool                # written by Claude (False = simple fallback text)
 
 
 class CreateUpload(BaseModel):
@@ -55,6 +97,10 @@ class ProjectRead(BaseModel):
     height: int | None
     fps: float | None
     has_audio: bool | None
+    source_url: str | None = None
+    source_title: str | None = None
+    source_channel: str | None = None
+    source_channel_url: str | None = None
     jobs: list[JobRead] = []
 
     @classmethod
@@ -79,6 +125,46 @@ class CompleteUploadResponse(BaseModel):
     job: JobRead
 
 
+class TextOverlay(BaseModel):
+    """A text placed on the video in the clip editor."""
+    id: str = Field(min_length=1, max_length=40)
+    text: str = Field(max_length=300)
+    x: float = Field(ge=0, le=1)       # centre, as a fraction of the frame width
+    y: float = Field(ge=0, le=1)       # centre, as a fraction of the frame height
+    size: float = Field(ge=0.02, le=0.3)  # font em as a fraction of the frame width
+    font: Literal["montserrat", "poppins", "anton", "bebas"] = "montserrat"
+    color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
+    style: Literal["outline", "box", "plain"] = "outline"
+    start: float = Field(default=0, ge=0)    # seconds from the clip's start
+    end: float | None = Field(default=None, ge=0)  # None = until the clip ends
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> "TextOverlay":
+        if self.end is not None and self.end <= self.start:
+            raise ValueError("a text must end after it starts")
+        return self
+
+
+class OverlaysRequest(BaseModel):
+    overlays: list[TextOverlay] = Field(default_factory=list, max_length=30)
+
+
+class ClipWord(BaseModel):
+    start: float
+    end: float
+    text: str           # as shown in captions (after fixes; "" = hidden)
+    original: str       # as transcribed
+
+
+class WordFix(BaseModel):
+    start: float                          # the word's start time, identifies it
+    text: str = Field(max_length=60)      # "" hides the word in captions
+
+
+class CorrectionsRequest(BaseModel):
+    fixes: list[WordFix] = Field(max_length=2000)
+
+
 class ClipRead(BaseModel):
     id: str
     project_id: str
@@ -95,6 +181,7 @@ class ClipRead(BaseModel):
     suggested_start: float | None
     suggested_end: float | None
     thumbnail_url: str
+    overlays: list[TextOverlay] = []
 
     @classmethod
     def of(cls, clip: Clip) -> "ClipRead":
@@ -105,11 +192,37 @@ class ClipRead(BaseModel):
             suggested_start=clip.suggested_start, suggested_end=clip.suggested_end,
             # The start time in the URL busts the browser cache after a trim.
             thumbnail_url=f"/api/clips/{clip.id}/thumbnail?t={int(clip.start * 1000)}",
+            overlays=_overlays(clip.overlays),
         )
+
+
+def _overlays(raw: str | None) -> list["TextOverlay"]:
+    try:
+        items = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    out = []
+    for item in items if isinstance(items, list) else []:
+        try:
+            out.append(TextOverlay.model_validate(item))
+        except ValueError:
+            continue
+    return out
 
 
 class SimpleClipsRequest(BaseModel):
     target_seconds: float = Field(ge=15, le=180)
+
+
+class AiClipsRequest(BaseModel):
+    # Aim for 20-45 s moments whose ending loops back into the start (optional style).
+    short: bool = False
+    # Optional: what kind of moments to look for, e.g. "funny moments" or "money tips".
+    focus: str | None = Field(default=None, max_length=300)
+
+
+class TitleRequest(BaseModel):
+    title: str = Field(max_length=100)
 
 
 class TrimRequest(BaseModel):
@@ -125,3 +238,87 @@ class ZipExportRequest(BaseModel):
     source: ClipSource = ClipSource.SIMPLE
     clip_ids: list[str] | None = None  # None = every clip of `source`
     settings: ExportSettings = ExportSettings()
+
+
+# --- Accounts -------------------------------------------------------------------------
+
+Lang = Literal["en", "nl", "es", "de", "fr", "ar"]
+
+
+class SignupRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(max_length=1000)
+    lang: Lang = "en"
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=1000)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(max_length=200)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(max_length=254)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(max_length=200)
+    password: str = Field(max_length=1000)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(max_length=1000)
+    new_password: str = Field(max_length=1000)
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(max_length=1000)
+
+
+class PlanLimits(BaseModel):
+    id: str
+    minutes: int
+    max_video_minutes: int
+    watermark: bool
+    editing: bool
+    zip: bool
+    priority: bool
+    ai_per_day: int
+
+
+class UsageRead(BaseModel):
+    used_minutes: float
+    limit_minutes: float
+    resets_at: datetime
+
+
+class SubscriptionRead(BaseModel):
+    plan: str  # what they pay for (the limits in AccountRead.plan may be "free" if it lapsed)
+    period: str | None
+    status: str | None
+    renews_at: datetime | None
+    ends_at: datetime | None
+
+
+class AccountRead(BaseModel):
+    id: str
+    email: str
+    email_verified: bool
+    lang: str
+    created_at: datetime
+    plan: PlanLimits
+    usage: UsageRead
+    subscription: SubscriptionRead | None
+    billing_enabled: bool
+
+
+class CheckoutRequest(BaseModel):
+    plan: Literal["creator", "pro"]
+    period: Literal["monthly", "yearly"] = "yearly"
+
+
+class UrlResponse(BaseModel):
+    url: str

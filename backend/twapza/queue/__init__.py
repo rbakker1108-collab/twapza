@@ -35,6 +35,13 @@ def get_queue() -> Queue:
     return Queue(settings.queue_name, connection=get_redis())
 
 
+def with_priority(queue: Queue, priority: bool) -> Queue:
+    """The priority twin of ``queue`` (workers take its jobs first) when ``priority`` is set."""
+    if not priority or queue.name.endswith("-priority"):
+        return queue
+    return Queue(f"{queue.name}-priority", connection=queue.connection, is_async=queue._is_async)
+
+
 def enqueue_job(
     session: Session,
     queue: Queue,
@@ -80,13 +87,18 @@ class JobCanceled(Exception):
     """Raised inside a running job when the user has canceled it."""
 
 
+# Our own error types: they carry a message for the user and are expected (a too-long video, a
+# private YouTube link…), so they are logged as warnings, not as errors for the error tracker.
+EXPECTED_ERRORS = {"MediaError", "TaskError", "HighlightError", "StorageError", "ImportFailed"}
+
+
 def user_message(exc: BaseException) -> str:
     """A message for the person using Twapza, from any exception a job raised."""
     if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
         return "The server ran out of disk space. Delete some projects and try again."
     text = str(exc).strip()
     # Our own error types already carry readable messages.
-    if exc.__class__.__name__ in {"MediaError", "TaskError", "HighlightError", "StorageError"}:
+    if exc.__class__.__name__ in EXPECTED_ERRORS:
         return text or "Processing failed."
     return f"Something went wrong: {text or exc.__class__.__name__}"
 
@@ -164,7 +176,10 @@ def run_tracked(job_id: str, body: Callable[[ProgressReporter], None]) -> bool:
         canceled = True
         log.info("job %s canceled", job_id)
     except Exception as exc:  # noqa: BLE001 - we record every failure
-        log.exception("job %s failed", job_id)
+        if exc.__class__.__name__ in EXPECTED_ERRORS:
+            log.warning("job %s failed: %s", job_id, exc)
+        else:
+            log.exception("job %s failed", job_id)  # a real bug: reported to Sentry when it's on
         error = user_message(exc)
 
     with Session(get_engine()) as session:
@@ -249,7 +264,7 @@ def reap_stale_jobs(connection, now: datetime | None = None) -> int:
             job.error = LOST_WORKER_MESSAGE
             job.finished_at = now
             session.add(job)
-            if job.type == JobType.INGEST:
+            if job.type in (JobType.INGEST, JobType.IMPORT):
                 project = session.get(Project, job.project_id)
                 if project is not None and project.status != ProjectStatus.READY:
                     project.status = ProjectStatus.FAILED

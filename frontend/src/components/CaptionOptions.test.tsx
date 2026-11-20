@@ -18,18 +18,25 @@ describe("caption options", () => {
     await userEvent.click(within(panel).getByRole("button", { name: "Download all (ZIP)" }));
   };
 
-  it("are off by default and send captions: null", async () => {
+  it("are on by default and can be switched off", async () => {
     render(<ClipsWorkspace project={makeProject()} config={makeConfig()} />);
-    expect(screen.getByRole("checkbox", { name: /burn in captions/i })).not.toBeChecked();
+    const toggle = screen.getByRole("checkbox", { name: /subtitles/i });
+    expect(toggle).toBeChecked();
+    expect(screen.getByTestId("caption-preview")).toBeInTheDocument();
+    await zip();
+    await waitFor(() => expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", expect.objectContaining({
+      captions: expect.objectContaining({ font: "montserrat" }),
+    })));
+
+    await userEvent.click(toggle);
     expect(screen.queryByTestId("caption-preview")).toBeNull();
     await zip();
-    await waitFor(() => expect(exportZip).toHaveBeenCalledWith("p1", "ai", expect.objectContaining({ captions: null })));
+    await waitFor(() => expect(exportZip).toHaveBeenLastCalledWith("p1", "ai", expect.objectContaining({ captions: null })));
   });
 
   it("sends the chosen caption style and remembers it when toggled", async () => {
     render(<ClipsWorkspace project={makeProject()} config={makeConfig()} />);
-    const toggle = screen.getByRole("checkbox", { name: /burn in captions/i });
-    await userEvent.click(toggle);
+    const toggle = screen.getByRole("checkbox", { name: /subtitles/i });
     expect(screen.getByTestId("caption-preview")).toHaveTextContent("THIS IS HOW");
 
     await userEvent.selectOptions(screen.getByLabelText("Font"), "anton");

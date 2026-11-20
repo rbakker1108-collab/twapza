@@ -34,10 +34,40 @@ export interface Clip {
   suggested_start: number | null;
   suggested_end: number | null;
   thumbnail_url: string;
+  /** Texts placed on the video in the clip editor. */
+  overlays: TextOverlay[];
+}
+
+export type OverlayStyle = "outline" | "box" | "plain";
+
+/** Mirrors api/schemas.py TextOverlay. Positions are fractions of the frame. */
+export interface TextOverlay {
+  id: string;
+  text: string;
+  /** Centre of the text, 0–1 across / down the frame. */
+  x: number;
+  y: number;
+  /** Font em as a fraction of the frame width (0.02–0.3). */
+  size: number;
+  font: CaptionFont;
+  color: string;
+  style: OverlayStyle;
+  /** Seconds from the clip's start; end null = until the clip ends. */
+  start: number;
+  end: number | null;
+}
+
+/** A caption word in the clip editor (text "" = hidden from captions). */
+export interface ClipWord {
+  start: number;
+  end: number;
+  text: string;
+  original: string;
 }
 
 export type Aspect = "original" | "9:16";
-export type VerticalFit = "crop" | "blur";
+/** blur = whole frame over a blurred copy, bars = whole frame on black, crop = fill (cuts the sides). */
+export type VerticalFit = "blur" | "bars" | "crop";
 
 export type CaptionFont = "montserrat" | "poppins" | "anton" | "bebas";
 
@@ -61,6 +91,18 @@ export interface ExportSettings {
   upscale_1080: boolean;
   /** Burned-in word-by-word captions; null = none. */
   captions: CaptionSettings | null;
+  /** Optional retention boosts: the clip title as text on the first 3 seconds, */
+  hook_text: boolean;
+  /** its most gripping line played first as a teaser, */
+  cold_open: boolean;
+  /** and long pauses between words cut out. */
+  cut_pauses: boolean;
+  /** Show the hook text for the whole clip (instead of the first 3 seconds). */
+  hook_full: boolean;
+  /** Cut out "um", "uh", … */
+  cut_fillers: boolean;
+  /** A bar along the top that fills up as the clip plays. */
+  progress_bar: boolean;
 }
 
 export interface Project {
@@ -77,7 +119,26 @@ export interface Project {
   height: number | null;
   fps: number | null;
   has_audio: boolean | null;
+  /** The original video, credited in clip descriptions (filled in by YouTube imports, editable). */
+  source_url: string | null;
+  source_title: string | null;
+  source_channel: string | null;
+  source_channel_url: string | null;
   jobs: Job[];
+}
+
+export type Credit = Pick<Project, "source_title" | "source_channel" | "source_url" | "source_channel_url">;
+
+export interface ClipDescription {
+  /** Ready to paste: description, credit, hashtags. */
+  text: string;
+  description: string;
+  hashtags: string[];
+  /** Suggested Shorts titles (one can be used as the hook text). */
+  titles: string[];
+  credit: string | null;
+  /** Written by Claude (false = simple text, e.g. no API key). */
+  ai: boolean;
 }
 
 export interface ProjectSummary {
@@ -106,6 +167,44 @@ export interface PublicConfig {
   max_clip_seconds: number;
   ai_enabled: boolean;
   claude_model: string;
+  youtube_enabled: boolean;
+  billing_enabled: boolean;
+  /** e.g. ["creator_monthly", "pro_yearly"]: the plans that can be bought. */
+  billing_plans: string[];
+}
+
+export type PlanId = "free" | "creator" | "pro";
+export type BillingPeriod = "monthly" | "yearly";
+
+/** Mirrors api/schemas.py AccountRead (limits come from accounts/plans.py). */
+export interface Account {
+  id: string;
+  email: string;
+  /** Confirmed through the link in the welcome email (needed to add videos). */
+  email_verified: boolean;
+  lang: string;
+  created_at: string;
+  plan: {
+    id: PlanId;
+    minutes: number;
+    max_video_minutes: number;
+    watermark: boolean;
+    /** Clip editor extras: hook text, own texts, caption fixes, cut pauses/fillers, cold open, AI copy. */
+    editing: boolean;
+    zip: boolean;
+    priority: boolean;
+    /** AI requests (finding highlights, writing descriptions) per day. */
+    ai_per_day: number;
+  };
+  usage: { used_minutes: number; limit_minutes: number; resets_at: string };
+  subscription: {
+    plan: PlanId;
+    period: BillingPeriod | null;
+    status: string | null;
+    renews_at: string | null;
+    ends_at: string | null;
+  } | null;
+  billing_enabled: boolean;
 }
 
 export class ApiError extends Error {
@@ -128,12 +227,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, NETWORK_ERROR);
   }
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+    let message =
+      res.status === 502 || res.status === 503 || res.status === 504
+        ? "Twapza's server isn't responding right now (it may be restarting). Wait a moment and try again."
+        : `Request failed (${res.status})`;
     try {
       const body = await res.json();
       const detail = body?.detail;
       if (typeof detail === "string") message = detail;
       else if (detail?.message) message = detail.message;
+      else if (Array.isArray(detail) && typeof detail[0]?.msg === "string")
+        message = detail[0].msg.replace(/^Value error, /, ""); // FastAPI validation error
     } catch {
       /* non-JSON error body */
     }
@@ -157,6 +261,37 @@ export const api = {
     request<void>(`/api/uploads/${id}/chunks/${index}`, { method: "PUT", body, signal }),
   completeUpload: (id: string) =>
     request<{ project: Project; job: Job }>(`/api/uploads/${id}/complete`, { method: "POST" }),
+  importYoutube: (url: string, rights_confirmed: boolean) =>
+    request<{ project: Project; job: Job }>("/api/imports", json({ url, rights_confirmed })),
+  updateCredit: (id: string, credit: Credit) =>
+    request<Project>(`/api/projects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credit),
+    }),
+  getDescription: (clipId: string) => request<ClipDescription>(`/api/clips/${clipId}/description`),
+  writeDescription: (clipId: string) =>
+    request<ClipDescription>(`/api/clips/${clipId}/description`, { method: "POST" }),
+  me: () => request<Account>("/api/auth/me"),
+  signup: (email: string, password: string, lang: string) =>
+    request<Account>("/api/auth/signup", json({ email, password, lang })),
+  login: (email: string, password: string) => request<Account>("/api/auth/login", json({ email, password })),
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  verifyEmail: (token: string) => request<Account>("/api/auth/verify-email", json({ token })),
+  resendVerification: () => request<{ ok: boolean }>("/api/auth/resend-verification", { method: "POST" }),
+  forgotPassword: (email: string) => request<{ ok: boolean }>("/api/auth/forgot-password", json({ email })),
+  resetPassword: (token: string, password: string) =>
+    request<Account>("/api/auth/reset-password", json({ token, password })),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>("/api/auth/change-password", json({ current_password, new_password })),
+  deleteAccount: (password: string) => request<void>("/api/auth/delete-account", json({ password })),
+  /** A Creem checkout page for a new subscription. */
+  checkout: (plan: PlanId, period: BillingPeriod) =>
+    request<{ url: string }>("/api/billing/checkout", json({ plan, period })),
+  /** Switch the current subscription right away (Creem charges the prorated difference). */
+  changePlan: (plan: PlanId, period: BillingPeriod) =>
+    request<Account>("/api/billing/change-plan", json({ plan, period })),
+  billingPortal: () => request<{ url: string }>("/api/billing/portal"),
   getProject: (id: string) => request<Project>(`/api/projects/${id}`),
   listProjects: () => request<ProjectSummary[]>("/api/projects"),
   deleteProject: (id: string) => request<void>(`/api/projects/${id}`, { method: "DELETE" }),
@@ -165,8 +300,27 @@ export const api = {
   getJob: (id: string) => request<Job>(`/api/jobs/${id}`),
   createSimpleClips: (projectId: string, target_seconds: number) =>
     request<Job>(`/api/projects/${projectId}/simple-clips`, json({ target_seconds })),
-  createAiClips: (projectId: string) =>
-    request<Job>(`/api/projects/${projectId}/ai-clips`, { method: "POST" }),
+  setClipTitle: (clipId: string, title: string) =>
+    request<Clip>(`/api/clips/${clipId}/title`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  createAiClips: (projectId: string, short = false, focus = "") =>
+    request<Job>(`/api/projects/${projectId}/ai-clips`, json({ short, focus: focus.trim() || null })),
+  setOverlays: (clipId: string, overlays: TextOverlay[]) =>
+    request<Clip>(`/api/clips/${clipId}/overlays`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overlays }),
+    }),
+  getClipWords: (clipId: string) => request<ClipWord[]>(`/api/clips/${clipId}/words`),
+  saveCorrections: (projectId: string, fixes: { start: number; text: string }[]) =>
+    request<Clip[]>(`/api/projects/${projectId}/corrections`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fixes }),
+    }),
   trimClip: (clipId: string, start: number, end: number) =>
     request<Clip>(`/api/clips/${clipId}`, {
       method: "PATCH",
@@ -179,5 +333,14 @@ export const api = {
     request<Job>(`/api/clips/${clipId}/export`, json({ settings })),
   exportZip: (projectId: string, source: ClipSource, settings?: ExportSettings) =>
     request<Job>(`/api/projects/${projectId}/export-zip`, json({ source, settings })),
+  /** Pass the export settings so the subtitle timing matches the download (cut pauses / cold open). */
+  subtitlesUrl: (clipId: string, settings?: Pick<ExportSettings, "cut_pauses" | "cold_open" | "cut_fillers">) => {
+    const params = new URLSearchParams();
+    if (settings?.cut_pauses) params.set("cut_pauses", "true");
+    if (settings?.cold_open) params.set("cold_open", "true");
+    if (settings?.cut_fillers) params.set("cut_fillers", "true");
+    const query = params.toString();
+    return `/api/clips/${clipId}/subtitles.srt${query ? `?${query}` : ""}`;
+  },
   jobEventsUrl: (id: string) => `/api/jobs/${id}/events`,
 };

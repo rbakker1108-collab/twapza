@@ -17,17 +17,38 @@ from fastapi.concurrency import run_in_threadpool
 from rq import Queue
 from sqlmodel import Session, select
 
+from twapza.accounts.usage import plan_of, usage_of
+from twapza.api.deps import current_user
 from twapza.api.schemas import CompleteUploadResponse, CreateUpload, JobRead, ProjectRead, UploadSession
 from twapza.config import ALLOWED_EXTENSIONS, Settings, get_settings
-from twapza.db.models import JobType, Project, ProjectStatus, UploadPart, utcnow
+from twapza.db.models import JobType, Project, ProjectStatus, UploadPart, User, utcnow
 from twapza.db.session import get_session
-from twapza.queue import enqueue_job, get_queue
+from twapza.queue import enqueue_job, get_queue, with_priority
 from twapza.storage import Storage, get_storage
 from twapza.workers.tasks import ingest_project
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 RIGHTS_REQUIRED = "Please confirm that you own this video or have permission to use it."
+
+
+def require_verified(user: User) -> None:
+    """Adding videos needs a confirmed email address (keeps throwaway accounts from using free minutes)."""
+    from twapza.accounts.users import is_verified
+
+    if not is_verified(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Confirm your email address first: click the link in the email we sent you.")
+
+
+def require_minutes_left(session: Session, user: User) -> None:
+    """Refuse new videos once this month's minutes are used up (the exact check runs at ingest)."""
+    usage = usage_of(session, user)
+    if usage.remaining_seconds < 1:
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            f"You've used all {plan_of(user).minutes} video minutes of this month. Upgrade on your "
+            f"account page, or wait until {usage.period_end:%Y-%m-%d}.")
 
 
 def _received(session: Session, project_id: str) -> list[int]:
@@ -37,9 +58,9 @@ def _received(session: Session, project_id: str) -> list[int]:
     return list(rows)
 
 
-def _get_uploading(session: Session, project_id: str) -> Project:
+def _get_uploading(session: Session, project_id: str, user: User) -> Project:
     project = session.get(Project, project_id)
-    if project is None:
+    if project is None or project.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found.")
     if project.status != ProjectStatus.UPLOADING:
         raise HTTPException(status.HTTP_409_CONFLICT, "Upload is already complete.")
@@ -52,9 +73,12 @@ def create_upload(
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
+    user: User = Depends(current_user),
 ) -> UploadSession:
     if not body.rights_confirmed:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, RIGHTS_REQUIRED)
+    require_verified(user)
+    require_minutes_left(session, user)
 
     filename = PurePath(body.filename.replace("\\", "/")).name
     ext = PurePath(filename).suffix.lower().lstrip(".")
@@ -70,6 +94,7 @@ def create_upload(
     now = utcnow()
     chunk_size = settings.chunk_size_bytes
     project = Project(
+        user_id=user.id,
         filename=filename,
         ext=ext,
         size_bytes=body.size_bytes,
@@ -89,8 +114,9 @@ def create_upload(
 
 
 @router.get("/{project_id}", response_model=UploadSession)
-def get_upload(project_id: str, session: Session = Depends(get_session)) -> UploadSession:
-    project = _get_uploading(session, project_id)
+def get_upload(project_id: str, session: Session = Depends(get_session),
+               user: User = Depends(current_user)) -> UploadSession:
+    project = _get_uploading(session, project_id, user)
     return UploadSession(
         project_id=project.id, chunk_size=project.chunk_size,
         total_chunks=project.total_chunks, received_chunks=_received(session, project.id),
@@ -104,8 +130,9 @@ async def put_chunk(
     request: Request,
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
+    user: User = Depends(current_user),
 ) -> None:
-    project = _get_uploading(session, project_id)
+    project = _get_uploading(session, project_id, user)
     if not 0 <= index < project.total_chunks:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Chunk index out of range.")
     offset = index * project.chunk_size
@@ -132,8 +159,9 @@ def complete_upload(
     session: Session = Depends(get_session),
     storage: Storage = Depends(get_storage),
     queue: Queue = Depends(get_queue),
+    user: User = Depends(current_user),
 ) -> CompleteUploadResponse:
-    project = _get_uploading(session, project_id)
+    project = _get_uploading(session, project_id, user)
     received = _received(session, project.id)
     if len(received) != project.total_chunks:
         missing = sorted(set(range(project.total_chunks)) - set(received))
@@ -148,7 +176,7 @@ def complete_upload(
     session.commit()
 
     job = enqueue_job(
-        session, queue, project_id=project.id, job_type=JobType.INGEST, func=ingest_project,
+        session, with_priority(queue, plan_of(user).priority), project_id=project.id, job_type=JobType.INGEST, func=ingest_project,
     )
     session.refresh(project)
     return CompleteUploadResponse(project=ProjectRead.of(project, [job]), job=JobRead.of(job))

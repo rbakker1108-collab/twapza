@@ -1,7 +1,9 @@
 """RQ task entrypoints. Each takes plain string IDs so it is trivially serialisable."""
 
+import dataclasses
 import json
 import logging
+import re
 import tempfile
 import zipfile
 from collections.abc import Callable
@@ -10,23 +12,29 @@ from pathlib import Path
 from sqlmodel import Session, delete, select
 
 from twapza import queue as jobqueue
+from twapza.accounts import usage
 from twapza import transcription
-from twapza.captions.ass import build_ass
+from twapza.captions.ass import TextBox, build_ass
 from twapza.captions.style import FONTS_DIR
 from twapza.clipping.highlights import ask_for_candidates, build_highlights
 from twapza.clipping.llm import ClaudeHighlighter, HighlightFinder, chunk_transcript
-from twapza.clipping.signals import detect_scene_cuts, energy_from_wav
+from twapza.clipping.signals import detect_scene_cuts, energy_from_wav, loudness_between
 from twapza.clipping.simple import plan_simple_clips
+from twapza.clipping.timeline import (
+    Segment, find_quote, is_filler, pick_teaser, remove_pauses, with_cold_open,
+)
 from twapza.config import get_settings
-from twapza.db.models import Clip, ClipSource, Job, JobType, Project, ProjectStatus
+from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
 from twapza.db.session import get_engine
 from twapza.exports import (
     ExportSettings, export_filename, export_key, output_size, video_filter,
 )
+from twapza.importing import youtube
 from twapza.media import ffmpeg
 from twapza.queue import ProgressReporter, run_tracked
 from twapza.storage import get_storage
 from twapza.transcription import Transcript
+from twapza.transcription.base import Word
 
 log = logging.getLogger(__name__)
 
@@ -65,12 +73,42 @@ def _require_ready(project: Project) -> None:
         raise TaskError("The video has not finished processing yet.")
 
 
-def load_transcript(project: Project) -> Transcript | None:
+def load_corrections(project: Project) -> dict[str, str]:
+    """Caption fixes from the clip editor, keyed by the word's start time (3 decimals)."""
+    storage = get_storage()
+    if not storage.exists(project.corrections_key):
+        return {}
+    try:
+        with storage.open(project.corrections_key) as f:
+            data = json.loads(f.read().decode("utf-8"))
+    except ValueError:
+        return {}
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def word_key(start: float) -> str:
+    return f"{start:.3f}"
+
+
+def load_transcript(project: Project, *, corrected: bool = True) -> Transcript | None:
+    """The cached transcript with the user's caption fixes applied (an empty fix hides a word)."""
     storage = get_storage()
     if not storage.exists(project.transcript_key):
         return None
     with storage.open(project.transcript_key) as f:
-        return Transcript.from_json(f.read().decode("utf-8"))
+        transcript = Transcript.from_json(f.read().decode("utf-8"))
+    fixes = load_corrections(project) if corrected else {}
+    if not fixes:
+        return transcript
+
+    def fixed(word: Word) -> Word:
+        fix = fixes.get(word_key(word.start))
+        if fix is None:
+            return word
+        return dataclasses.replace(word, text=f" {fix.strip()}" if fix.strip() else "")
+
+    return dataclasses.replace(transcript, segments=[
+        dataclasses.replace(seg, words=[fixed(w) for w in seg.words]) for seg in transcript.segments])
 
 
 def _save_transcript(project: Project, transcript: Transcript) -> None:
@@ -101,6 +139,57 @@ def _clip(project_id: str, clip_id: str) -> Clip:
         return clip
 
 
+def clip_segments(project: Project, clip: Clip, transcript: Transcript | None, *,
+                  cut_pauses: bool = False, cold_open: bool = False,
+                  cut_fillers: bool = False) -> list[Segment]:
+    """The parts of the source an export plays, in order (see ``clipping/timeline.py``)."""
+    words = transcript.words if transcript else []
+    segments = [Segment(clip.start, clip.end)]
+    if (cut_pauses or cut_fillers) and words:
+        segments = remove_pauses(words, clip.start, clip.end, pauses=cut_pauses, fillers=cut_fillers)
+    if cold_open and words:
+        segments = with_cold_open(segments, _teaser(project, clip, words))
+    return segments
+
+
+def _teaser(project: Project, clip: Clip, words: list) -> Segment | None:
+    """Claude's quoted line if it can be found in the clip, else the loudest punchy sentence."""
+    if clip.teaser:
+        found = find_quote(words, clip.teaser, clip.start, clip.end)
+        if found:
+            return found
+    loudness = None
+    storage = get_storage()
+    if project.has_audio and storage.exists(project.audio_key):
+        try:
+            with storage.read_path(project.audio_key) as wav:
+                loudness = loudness_between(wav, clip.start, clip.end)
+        except (OSError, ValueError):
+            log.exception("could not read loudness for %s", clip.id)
+    return pick_teaser(words, clip.start, clip.end, loudness)
+
+
+def clip_boxes(clip: Clip) -> list[TextBox]:
+    """The clip editor's texts as positioned boxes in source time (bad entries are skipped)."""
+    try:
+        items = json.loads(clip.overlays or "[]")
+    except ValueError:
+        return []
+    boxes = []
+    for item in items if isinstance(items, list) else []:
+        try:
+            start = clip.start + max(0.0, float(item.get("start") or 0))
+            end = item.get("end")
+            end = clip.end if end is None else min(clip.end, clip.start + float(end))
+            boxes.append(TextBox(text=str(item["text"]), x=float(item["x"]), y=float(item["y"]),
+                                 size=float(item["size"]), font=str(item.get("font", "montserrat")),
+                                 color=str(item.get("color", "#FFFFFF")),
+                                 style=str(item.get("style", "outline")), start=start, end=end))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            log.warning("skipping a bad overlay on clip %s", clip.id)
+    return boxes
+
+
 def render_export(project: Project, clip: Clip, settings: ExportSettings,
                   on_progress: Progress | None = None) -> str:
     """Render a clip with the given settings (if not already rendered). Returns its key."""
@@ -112,37 +201,46 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
         return key
     app = get_settings()
     vf = video_filter(settings, project.width or 0, project.height or 0)
+    transcript = load_transcript(project)
+    segments = clip_segments(project, clip, transcript, cut_pauses=settings.cut_pauses,
+                             cold_open=settings.cold_open, cut_fillers=settings.cut_fillers)
+    words = transcript.words if transcript else []
+    if settings.cut_fillers:
+        words = [w for w in words if not is_filler(w)]
+    hook = clip.title if settings.hook_text else None
+    boxes = clip_boxes(clip) if settings.texts else []
+    progress = None
+    if settings.progress_bar:
+        progress = settings.captions.highlight_color if settings.captions else "#FFFFFF"
     with storage.read_path(project.original_key) as src, \
             tempfile.TemporaryDirectory(prefix="twapza-ass-") as tmp:
-        if settings.captions:
-            ass_text = _captions_for(project, clip, settings, src)
+        if settings.captions or hook or boxes or progress or settings.watermark:
+            width, height = output_size(settings, *ffmpeg.probe(src).display_size)
+            ass_text = build_ass(words, segments=segments, settings=settings.captions, hook=hook,
+                                 hook_full=settings.hook_full, boxes=boxes, progress_color=progress,
+                                 watermark=settings.watermark, width=width, height=height)
             if ass_text:
                 ass_path = Path(tmp) / "captions.ass"
                 ass_path.write_text(ass_text, encoding="utf-8")
                 vf = ffmpeg.join_filters(vf, ffmpeg.ass_filter(ass_path, FONTS_DIR))
         with storage.write_path(key) as dst:
-            ffmpeg.cut_clip(src, dst, clip.start, clip.end, preset=app.export_preset,
-                            crf=app.export_crf, video_filter=vf, on_progress=on_progress)
-    return key
-
-
-def _captions_for(project: Project, clip: Clip, settings: ExportSettings, src: Path) -> str | None:
-    """ASS subtitles for the clip, or None when nothing is said in it."""
-    transcript = load_transcript(project)
-    if transcript is None or not transcript.words:
-        return None
-    width, height = output_size(settings, *ffmpeg.probe(src).display_size)
-    return build_ass(transcript.words, clip_start=clip.start, clip_end=clip.end,
-                     settings=settings.captions, width=width, height=height)
-    app = get_settings()
-    vf = video_filter(settings, project.width or 0, project.height or 0)
-    with storage.read_path(project.original_key) as src, storage.write_path(key) as dst:
-        ffmpeg.cut_clip(src, dst, clip.start, clip.end, preset=app.export_preset,
-                        crf=app.export_crf, video_filter=vf, on_progress=on_progress)
+            ffmpeg.cut_segments(src, dst, [(seg.start, seg.end) for seg in segments],
+                                has_audio=project.has_audio is not False, fps=project.fps,
+                                preset=app.export_preset,
+                                crf=app.export_crf, video_filter=vf, on_progress=on_progress)
     return key
 
 
 # --- tasks ---------------------------------------------------------------------
+
+def _plan_check(project: Project, duration: float) -> tuple[str | None, bool]:
+    """(why the owner's plan doesn't allow this video or None, whether their jobs get priority)."""
+    with Session(get_engine()) as session:
+        user = usage.owner(session, project)
+        if user is None:
+            return None, False
+        return usage.video_problem(session, user, duration), usage.plan_of(user).priority
+
 
 def ingest_project(job_id: str, project_id: str) -> None:
     """Probe the upload, extract audio, build the preview proxy and queue transcription."""
@@ -160,6 +258,9 @@ def ingest_project(job_id: str, project_id: str) -> None:
                     f"Video is {info.duration / 60:.0f} min long; "
                     f"the limit is {settings.max_duration_min:.0f} min."
                 )
+            problem, priority = _plan_check(project, info.duration)
+            if problem:
+                raise ffmpeg.MediaError(problem)
             project = _set_project(
                 project_id,
                 duration=info.duration, width=info.width, height=info.height, fps=info.fps,
@@ -181,11 +282,14 @@ def ingest_project(job_id: str, project_id: str) -> None:
                     on_progress=progress.stage(15, 100, "Building preview"),
                 )
 
-        _set_project(project_id, status=ProjectStatus.READY)
+        project = _set_project(project_id, status=ProjectStatus.READY)
+        with Session(get_engine()) as session:
+            usage.record_usage(session, project, info.duration)  # this month's minutes
         if info.has_audio:
             # Queue now (not after this job) so the UI sees it as soon as ingest finishes.
             with Session(get_engine()) as session:
-                jobqueue.enqueue_job(session, jobqueue.get_queue(), project_id=project_id,
+                jobqueue.enqueue_job(session, jobqueue.with_priority(jobqueue.get_queue(), priority),
+                                     project_id=project_id,
                                      job_type=JobType.TRANSCRIBE, func=transcribe_project)
         else:
             _save_transcript(project, Transcript.empty(info.duration))
@@ -201,9 +305,55 @@ def _mark_project_failed(project_id: str, job_id: str) -> None:
         if project is None:
             return
         project.status = ProjectStatus.FAILED
-        project.error = (job.error if job else None) or "Processing failed"
+        if job is not None and job.status == JobStatus.CANCELED:
+            project.error = "Import was canceled."
+        else:
+            project.error = (job.error if job else None) or "Processing failed"
         session.add(project)
         session.commit()
+
+
+def safe_filename(title: str, ext: str = "mp4") -> str:
+    """A download/display filename from a video title."""
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", title)
+    name = re.sub(r"\s+", " ", name).strip(" .")[:120].strip() or "YouTube video"
+    return f"{name}.{ext}"
+
+
+def import_youtube(job_id: str, project_id: str, url: str) -> None:
+    """Download a YouTube video (the user confirmed the rights) as the original, then ingest."""
+
+    def body(progress: ProgressReporter) -> None:
+        settings = get_settings()
+        progress.update(0, "Looking up the video", force=True)
+        info = youtube.fetch_info(url)
+        if info.is_live:
+            raise TaskError("Live streams can't be imported. Wait until the stream has ended.")
+        if info.duration and info.duration > settings.max_duration_seconds:
+            raise TaskError(
+                f"Video is {info.duration / 60:.0f} min long; "
+                f"the limit is {settings.max_duration_min:.0f} min."
+            )
+        problem, priority = _plan_check(_get_project(project_id), info.duration or 0)
+        if problem:  # checked again after downloading, but this saves the download
+            raise TaskError(problem)
+        project = _set_project(project_id, filename=safe_filename(info.title), ext="mp4",
+                               source_title=info.title, source_channel=info.channel,
+                               source_channel_url=info.channel_url)
+        storage = get_storage()
+        with storage.write_path(project.original_key) as dst:
+            youtube.download_video(
+                url, dst, max_height=settings.youtube_max_height,
+                on_progress=progress.stage(2, 100, "Downloading from YouTube"),
+            )
+            size = dst.stat().st_size
+        _set_project(project_id, size_bytes=size, status=ProjectStatus.QUEUED)
+        with Session(get_engine()) as session:
+            jobqueue.enqueue_job(session, jobqueue.with_priority(jobqueue.get_queue(), priority),
+                                 project_id=project_id, job_type=JobType.INGEST, func=ingest_project)
+
+    if not run_tracked(job_id, body):
+        _mark_project_failed(project_id, job_id)
 
 
 def transcribe_project(job_id: str, project_id: str) -> None:
@@ -283,24 +433,33 @@ def load_scene_cuts(project: Project, on_progress: Progress | None = None) -> li
     return cuts
 
 
-def get_highlighter() -> HighlightFinder:
+SHORT_LENGTHS = (20.0, 45.0)  # the optional "short & loopable" style
+
+
+def get_highlighter(*, short: bool = False, focus: str | None = None) -> HighlightFinder:
     """The Claude-backed highlight finder (replaced by a fake in tests)."""
     settings = get_settings()
     key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
     if not key:
         raise TaskError("AI highlights need a Claude API key. Add ANTHROPIC_API_KEY to your .env "
                         "file and restart Twapza.")
+    min_len, max_len = SHORT_LENGTHS if short else (settings.highlight_min_seconds,
+                                                     settings.highlight_max_seconds)
     return ClaudeHighlighter(api_key=key, model=settings.claude_model, effort=settings.claude_effort,
-                             max_per_chunk=settings.highlights_per_chunk)
+                             max_per_chunk=settings.highlights_per_chunk, short=short,
+                             min_len=min_len, max_len=max_len, focus=focus)
 
 
-def generate_ai_clips(job_id: str, project_id: str) -> None:
+def generate_ai_clips(job_id: str, project_id: str, short: bool = False,
+                      focus: str | None = None) -> None:
     def body(progress: ProgressReporter) -> None:
         settings = get_settings()
         storage = get_storage()
         project = _get_project(project_id)
         _require_ready(project)
-        finder = get_highlighter()  # fail fast on a missing key
+        finder = get_highlighter(short=short, focus=focus)  # fail fast on a missing key
+        min_len, max_len = SHORT_LENGTHS if short else (settings.highlight_min_seconds,
+                                                         settings.highlight_max_seconds)
         duration = project.duration or 0
 
         progress.update(0, "Loading transcript", force=True)
@@ -324,16 +483,14 @@ def generate_ai_clips(job_id: str, project_id: str) -> None:
 
         candidates = ask_for_candidates(
             finder, chunks, video_title=project.filename, video_duration=duration,
-            min_len=settings.highlight_min_seconds, max_len=settings.highlight_max_seconds,
-            concurrency=settings.claude_concurrency,
+            min_len=min_len, max_len=max_len, concurrency=settings.claude_concurrency,
             on_progress=progress.stage(50, 90, f"Claude is reviewing {len(chunks)} part(s) of the video"),
         )
 
         progress.update(90, "Ranking moments", force=True)
         best = build_highlights(
             candidates, words=transcript.words, scene_cuts=cuts, energy=energy, duration=duration,
-            min_len=settings.highlight_min_seconds, max_len=settings.highlight_max_seconds,
-            limit=settings.max_highlights,
+            min_len=min_len, max_len=max_len, limit=settings.max_highlights,
         )
         if not best:
             raise TaskError("Claude didn't find any moments that would work as standalone clips.")
@@ -342,7 +499,7 @@ def generate_ai_clips(job_id: str, project_id: str) -> None:
             Clip(project_id=project_id, source=ClipSource.AI, index=i + 1, start=c.start, end=c.end,
                  suggested_start=c.start, suggested_end=c.end,
                  text=transcript.text_between(c.start, c.end), title=c.title, hook=c.hook,
-                 score=c.score, reason=c.reason)
+                 score=c.score, reason=c.reason, teaser=c.teaser or None)
             for i, c in enumerate(best)
         ]
         _replace_clips(project, ClipSource.AI, clips, progress.stage(92, 100, "Creating thumbnails"))

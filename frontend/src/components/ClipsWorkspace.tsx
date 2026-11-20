@@ -1,11 +1,35 @@
 import { useState } from "react";
 
 import type { ExportSettings, Project, PublicConfig } from "../api/client";
+import { usePlan } from "../auth/AuthProvider";
 import { canUpscale, DEFAULT_EXPORT, ExportOptions } from "./ExportOptions";
+import { useT } from "../i18n";
 import { HighlightsPanel } from "./HighlightsPanel";
 import { SimpleClipsPanel } from "./SimpleClipsPanel";
 
 type Tab = "ai" | "simple";
+
+const STORAGE_KEY = "twapza.downloadSettings";
+
+/** The last-used download settings (format, caption style, options), like a brand template. */
+export function loadSavedSettings(): ExportSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_EXPORT;
+    const saved = JSON.parse(raw) as Partial<ExportSettings>;
+    return { ...DEFAULT_EXPORT, ...saved, captions: saved.captions === undefined ? DEFAULT_EXPORT.captions : saved.captions };
+  } catch {
+    return DEFAULT_EXPORT;
+  }
+}
+
+function saveSettings(settings: ExportSettings) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    /* private mode / storage full: settings just aren't remembered */
+  }
+}
 
 interface Props {
   project: Project;
@@ -14,27 +38,38 @@ interface Props {
 
 /** Download format (shared) + the two ways of making clips. */
 export function ClipsWorkspace({ project, config }: Props) {
+  const t = useT();
+  const plan = usePlan();
   const [tab, setTab] = useState<Tab>("ai");
-  const [options, setOptions] = useState<ExportSettings>(DEFAULT_EXPORT);
-  const settings: ExportSettings = { ...options, upscale_1080: canUpscale(project) && options.upscale_1080 };
+  const [options, setOptionsState] = useState<ExportSettings>(loadSavedSettings);
+  const setOptions = (next: ExportSettings) => {
+    setOptionsState(next);
+    saveSettings(next);
+  };
+  const settings: ExportSettings = {
+    ...options,
+    upscale_1080: canUpscale(project) && options.upscale_1080,
+    // Remembered options the current plan doesn't include are left out (e.g. after a downgrade).
+    ...(plan.editing ? {} : { hook_text: false, cold_open: false, cut_pauses: false, cut_fillers: false }),
+  };
 
   const tabClass = (t: Tab) =>
     `rounded-lg px-4 py-2 text-sm font-medium transition ${
-      tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+      tab === t ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
     }`;
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl bg-white p-5 shadow-sm">
+      <div className="rounded-xl bg-surface p-5 shadow-sm">
         <ExportOptions project={project} value={options} onChange={setOptions} />
       </div>
 
-      <div role="tablist" className="inline-flex gap-1 rounded-xl bg-slate-200/70 p-1">
+      <div role="tablist" className="inline-flex gap-1 rounded-xl bg-surface-2 p-1">
         <button role="tab" aria-selected={tab === "ai"} className={tabClass("ai")} onClick={() => setTab("ai")}>
-          AI highlights
+          {t("AI highlights")}
         </button>
         <button role="tab" aria-selected={tab === "simple"} className={tabClass("simple")} onClick={() => setTab("simple")}>
-          Simple clips
+          {t("Simple clips")}
         </button>
       </div>
 
@@ -46,6 +81,7 @@ export function ClipsWorkspace({ project, config }: Props) {
           aiEnabled={config?.ai_enabled ?? false}
           model={config?.claude_model}
           maxLength={config?.max_clip_seconds}
+          onSettingsChange={setOptions}
         />
       </div>
       <div hidden={tab !== "simple"}>
@@ -54,6 +90,7 @@ export function ClipsWorkspace({ project, config }: Props) {
           settings={settings}
           minSeconds={config?.min_clip_seconds}
           maxSeconds={config?.max_clip_seconds}
+          onSettingsChange={setOptions}
         />
       </div>
     </div>

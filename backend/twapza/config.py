@@ -7,7 +7,7 @@ Twapza-specific settings use the ``TWAPZA_`` prefix. A few well-known variables
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ALLOWED_EXTENSIONS = ("mp4", "mov", "mkv")
@@ -67,8 +67,75 @@ class Settings(BaseSettings):
     job_timeout_seconds: int = 6 * 60 * 60
     queue_name: str = "twapza"
 
+    # YouTube links
+    youtube_enabled: bool = True
+    youtube_max_height: int = 1080
+
     # Cleanup scheduler
     cleanup_interval_seconds: int = 15 * 60
+
+    # Accounts
+    # Where people open Twapza (links in emails, checkout return URLs). https:// also makes the
+    # login cookie Secure.
+    public_url: str = "http://localhost:8080"
+    session_days: int = 30
+    # New accounts must click a link in a confirmation email before they can add videos.
+    email_verification: bool = True
+    # Error reporting (Sentry or a compatible service such as GlitchTip). Empty = off.
+    sentry_dsn: str | None = None
+    sentry_environment: str = "production"
+    # Reverse proxies in front of the API that add X-Forwarded-For (nginx = 1, Caddy + nginx = 2).
+    trusted_proxy_hops: int = 1
+    # Password-reset emails. Without an SMTP host the link is written to the API log instead.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str = "Twapza <no-reply@localhost>"
+    smtp_starttls: bool = True
+
+    # Payments (Creem, merchant of record: it sells to your customers and handles VAT/sales tax).
+    # Without an API key, paid plans can't be bought (plans can still be set by hand with
+    # `python -m twapza.users set-plan`). `python -m twapza.creem_setup` creates the products and
+    # prints the values to put here. A creem_test_… key talks to Creem's test environment.
+    creem_api_key: SecretStr | None = None
+    creem_webhook_secret: SecretStr | None = None
+    # Product IDs of the four subscription products (prod_…)
+    creem_product_creator_monthly: str | None = None
+    creem_product_creator_yearly: str | None = None
+    creem_product_pro_monthly: str | None = None
+    creem_product_pro_yearly: str | None = None
+
+    @field_validator("creem_product_creator_monthly", "creem_product_creator_yearly", "creem_product_pro_monthly",
+                     "creem_product_pro_yearly", mode="before")
+    @classmethod
+    def _clean_product_id(cls, value: object) -> object:
+        """IDs never contain spaces or '#': drop anything glued on, like a comment pasted onto the
+        same line in .env (``prod_123# low | medium …``)."""
+        if isinstance(value, str):
+            value = value.split("#", 1)[0].strip()
+            return value.split()[0] if value else None
+        return value
+
+    @property
+    def billing_enabled(self) -> bool:
+        return bool(self.creem_api_key and self.creem_api_key.get_secret_value())
+
+    @property
+    def creem_test_mode(self) -> bool:
+        key = self.creem_api_key.get_secret_value() if self.creem_api_key else ""
+        return key.startswith("creem_test_")
+
+    @property
+    def prices(self) -> dict[tuple[str, str], str]:
+        """(plan, period) -> Creem product ID, for the ones that are configured."""
+        out = {
+            ("creator", "monthly"): self.creem_product_creator_monthly,
+            ("creator", "yearly"): self.creem_product_creator_yearly,
+            ("pro", "monthly"): self.creem_product_pro_monthly,
+            ("pro", "yearly"): self.creem_product_pro_yearly,
+        }
+        return {k: str(v).strip() for k, v in out.items() if v and str(v).strip()}
 
     @property
     def max_upload_bytes(self) -> int:

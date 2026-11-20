@@ -17,13 +17,71 @@ log = logging.getLogger(__name__)
 # version to MIGRATIONS. If there is no migration path (e.g. a much older
 # database), the database and stored project files are reset: all data is
 # temporary (24h retention). Replace with Alembic before real deployments.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 10
 
-MIGRATIONS: dict[int, list[str]] = {
+# Tables that hold data people expect us to keep (never dropped by the reset below).
+PERMANENT_TABLES = {"waitlistentry", "user", "authsession", "passwordreset", "usageevent", "emailverification"}
+
+def _rename_column(table: str, old: str, new: str):
+    """A migration step that renames a column if the table has it (older databases may lack the table)."""
+    def step(conn) -> None:
+        columns = {row[1] for row in conn.execute(text(f'PRAGMA table_info("{table}")'))}
+        if old in columns and new not in columns:
+            conn.execute(text(f'ALTER TABLE "{table}" RENAME COLUMN {old} TO {new}'))
+    return step
+
+
+def _add_column(table: str, column: str, kind: str):
+    """A migration step that adds a column if the table exists and doesn't have it yet."""
+    def step(conn) -> None:
+        columns = {row[1] for row in conn.execute(text(f'PRAGMA table_info("{table}")'))}
+        if columns and column not in columns:
+            conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {column} {kind}'))
+    return step
+
+
+def _when_table(table: str, statement: str):
+    """A migration step that runs ``statement`` only if ``table`` exists."""
+    def step(conn) -> None:
+        if conn.execute(text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:t"), {"t": table}).first():
+            conn.execute(text(statement))
+    return step
+
+
+MIGRATIONS: dict[int, list] = {
     # version reached -> statements that upgrade from version - 1
     3: [
         "ALTER TABLE clip ADD COLUMN suggested_start FLOAT",
         "ALTER TABLE clip ADD COLUMN suggested_end FLOAT",
+    ],
+    4: [
+        "ALTER TABLE project ADD COLUMN source_url VARCHAR",
+    ],
+    5: [
+        "ALTER TABLE project ADD COLUMN source_title VARCHAR",
+        "ALTER TABLE project ADD COLUMN source_channel VARCHAR",
+        "ALTER TABLE project ADD COLUMN source_channel_url VARCHAR",
+        "ALTER TABLE clip ADD COLUMN description VARCHAR",
+        "ALTER TABLE clip ADD COLUMN hashtags VARCHAR",
+    ],
+    6: [
+        "ALTER TABLE clip ADD COLUMN title_options VARCHAR",
+        "ALTER TABLE clip ADD COLUMN teaser VARCHAR",
+    ],
+    7: [
+        "ALTER TABLE clip ADD COLUMN overlays VARCHAR",
+    ],
+    8: [  # accounts (the new account tables are created by create_all)
+        "ALTER TABLE project ADD COLUMN user_id VARCHAR",
+        "CREATE INDEX IF NOT EXISTS ix_project_user_id ON project (user_id)",
+    ],
+    9: [  # payments moved from Lemon Squeezy to Stripe
+        _rename_column("user", "variant_id", "price_id"),
+    ],
+    10: [  # email verification (the emailverification table is created by create_all)
+        _add_column("user", "email_verified_at", "DATETIME"),
+        # accounts made before verification existed count as confirmed
+        _when_table("user", 'UPDATE "user" SET email_verified_at = created_at WHERE email_verified_at IS NULL'),
     ],
 }
 
@@ -94,12 +152,17 @@ def init_db() -> None:
                     for v in range(version + 1, SCHEMA_VERSION + 1):
                         log.info("migrating database schema to v%s", v)
                         for statement in MIGRATIONS[v]:
-                            conn.execute(text(statement))
+                            if callable(statement):
+                                statement(conn)
+                            else:
+                                conn.execute(text(statement))
             elif has_tables and version != SCHEMA_VERSION:
                 log.warning("database schema v%s != v%s: resetting temporary data", version, SCHEMA_VERSION)
                 from twapza.storage import get_storage
 
-                SQLModel.metadata.drop_all(engine)
+                # Projects are temporary; accounts and the waitlist are not.
+                temporary = [t for t in SQLModel.metadata.sorted_tables if t.name not in PERMANENT_TABLES]
+                SQLModel.metadata.drop_all(engine, tables=temporary)
                 get_storage().delete_prefix("projects/")
             SQLModel.metadata.create_all(engine)
             with engine.begin() as conn:

@@ -175,6 +175,18 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   audiences, FAQ, guides), display prices/features in `plans.ts` (keep in sync with `accounts/plans.py`).
   Don't claim features that don't exist. The old early-access list (`POST /api/waitlist`, `WaitlistEntry`)
   is no longer on the site; its data is kept (`python -m twapza.waitlist [--remove EMAIL]`).
+- **SEO** (`marketing/locale.ts`, `seo.ts`, `entry-server.tsx`, `scripts/prerender.mjs`): every website page has a URL per
+  language: English at the plain address, others under `/nl`, `/es`, `/de`, `/fr`, `/ar` (`SITE_PATHS` + guides; `localize`,
+  `splitLang`). On those pages the URL decides the language (`MarketingLayout` effect); someone who picked another language
+  is redirected from the English address; the `LanguageSwitcher` changes the URL there. Marketing code imports `Link`/`NavLink`
+  from `marketing/links.tsx` so links stay in the visitor's language (login/app paths are left alone). `npm run build` also
+  builds `entry-server.tsx` with `vite build --ssr` and `prerender.mjs` writes `dist/<lang>/<page>/index.html` for every page ×
+  language: rendered HTML plus the `<!--seo-->` block of `index.html` replaced by `seo.headHtml` (title, description, canonical,
+  hreflang + x-default, Open Graph with `public/og-image.png`, JSON-LD: WebSite/Organization/SoftwareApplication/FAQPage on the
+  home page, offers on pricing, Article + breadcrumbs on guides) and `dist/sitemap.xml`. `main.tsx` hydrates pre-rendered pages
+  (language from `<html lang>`), so their first render must match the server's: no `window`/`localStorage` reads during
+  render (use an effect). nginx serves `$uri/index.html`, else `spa.html` (app shell, `noindex`). New website page: add it to
+  `SITE_PATHS`, the `websitePages` routes in `App.tsx` and `seo.PAGES` (translated title + description).
 - **Accounts** (`accounts/`, `api/routes/auth.py`): email + password (`passwords.py`: stdlib scrypt, 8-128
   chars). Login = server-side session: random token in an HttpOnly SameSite=Lax cookie `twapza_session`
   (Secure when `TWAPZA_PUBLIC_URL` is https), only its SHA-256 stored (`AuthSession`). `api/deps.current_user`
@@ -334,8 +346,8 @@ Production (www.twapza.io): `docker compose -f docker-compose.yml -f docker-comp
 adds Caddy (`deploy/Caddyfile`: automatic Let's Encrypt HTTPS for `TWAPZA_DOMAIN`, redirect from
 `TWAPZA_REDIRECT_DOMAIN`, security headers, unbuffered SSE), unpublishes port 8080, and sets
 `TWAPZA_PUBLIC_URL=https://…` and `TWAPZA_TRUSTED_PROXY_HOPS=2` (Caddy + nginx; `ratelimit.client_ip`
-reads the N-th X-Forwarded-For entry from the end). `frontend/public/robots.txt` + `sitemap.xml` list the
-public pages on www.twapza.io (add new marketing pages/guides there).
+reads the N-th X-Forwarded-For entry from the end). `frontend/public/robots.txt` keeps the app out of search engines; `sitemap.xml` is generated
+at build time (see **SEO** above).
 
 One worker processes jobs one at a time. For parallel exports/transcriptions:
 `docker compose up --scale twapza-worker=2`. GPU transcription (untested on real hardware):

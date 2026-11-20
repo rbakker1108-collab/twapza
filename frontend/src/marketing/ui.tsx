@@ -1,6 +1,6 @@
 /** Small building blocks shared by the website pages. */
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "./links";
 
 export function Section({ id, children, className = "" }: { id?: string; children: ReactNode; className?: string }) {
   return (

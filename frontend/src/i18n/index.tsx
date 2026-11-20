@@ -43,7 +43,8 @@ export function isRtl(lang: Lang) {
   return LANGUAGES.some((l) => l.code === lang && "rtl" in l && l.rtl);
 }
 
-function detect(): Lang {
+/** The language the visitor picked earlier, if any. */
+export function savedLang(): Lang | null {
   const known = LANGUAGES.map((l) => l.code as string);
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -51,9 +52,20 @@ function detect(): Lang {
   } catch {
     /* storage blocked */
   }
-  // English unless the visitor picked another language in the menu (not the browser's language).
-  return "en";
+  return null;
 }
+
+/** Remembers a language choice without switching (the website switches by changing the URL). */
+export function rememberLang(lang: Lang) {
+  try {
+    localStorage.setItem(STORAGE_KEY, lang);
+  } catch {
+    /* not remembered */
+  }
+}
+
+// English unless the visitor picked another language in the menu (not the browser's language).
+const detect = (): Lang => savedLang() ?? "en";
 
 interface I18n {
   lang: Lang;
@@ -68,11 +80,7 @@ export function I18nProvider({ children, initial }: { children: ReactNode; initi
 
   const setLang = useCallback((next: Lang) => {
     setLangState(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      /* not remembered */
-    }
+    rememberLang(next);
   }, []);
 
   useEffect(() => {

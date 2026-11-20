@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+
+import { Link } from "../marketing/links";
 
 import { api, type BillingPeriod, type PlanId } from "../api/client";
 import { choosePlan, useAuth } from "../auth/AuthProvider";

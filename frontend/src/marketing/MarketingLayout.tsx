@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthProvider";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { Logo } from "../components/Logo";
-import { msg, useT } from "../i18n";
+import { msg, savedLang, useI18n, useT } from "../i18n";
 import { CONTACT_EMAIL } from "./legal/types";
+import { Link, NavLink } from "./links";
+import { isLocalizedPath, localize, splitLang } from "./locale";
+import { useDocumentHead } from "./useDocumentHead";
 
 export const NAV = [
   { to: "/how-it-works", label: msg("How it works") },
@@ -20,8 +23,26 @@ export const NAV = [
 export function MarketingLayout() {
   const t = useT();
   const { account } = useAuth();
-  const { pathname, hash } = useLocation();
+  const { pathname, search, hash } = useLocation();
   const [open, setOpen] = useState(false);
+  const { lang, setLang } = useI18n();
+  const navigate = useNavigate();
+  const { lang: urlLang, path } = splitLang(pathname);
+  const localized = isLocalizedPath(path);
+  useDocumentHead(localized ? path : null, lang);
+
+  // On website pages the URL decides the language (/nl/pricing is Dutch). Visitors who picked a
+  // language before are sent from the English address to theirs.
+  useEffect(() => {
+    if (!localized) return;
+    if (urlLang !== "en") {
+      if (lang !== urlLang) setLang(urlLang);
+      return;
+    }
+    const saved = savedLang();
+    if (saved && saved !== "en") navigate(localize(path, saved) + search + hash, { replace: true });
+    else if (lang !== "en") setLang("en");
+  }, [localized, urlLang, path, lang, setLang, navigate, search, hash]);
 
   useEffect(() => {
     setOpen(false);

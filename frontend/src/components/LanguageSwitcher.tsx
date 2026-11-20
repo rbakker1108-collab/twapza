@@ -1,7 +1,24 @@
-import { LANGUAGES, useI18n, type Lang } from "../i18n";
+import { useLocation, useNavigate } from "react-router-dom";
+
+import { LANGUAGES, rememberLang, useI18n, type Lang } from "../i18n";
+import { isLocalizedPath, localize, splitLang } from "../marketing/locale";
 
 export function LanguageSwitcher() {
   const { lang, setLang, t } = useI18n();
+  const { pathname, search, hash } = useLocation();
+  const navigate = useNavigate();
+
+  const choose = (next: Lang) => {
+    const { path } = splitLang(pathname);
+    if (isLocalizedPath(path)) {
+      // Website pages have a URL per language; the page switches language when the URL changes.
+      rememberLang(next);
+      navigate(localize(path, next) + search + hash);
+    } else {
+      setLang(next);
+    }
+  };
+
   return (
     <label className="relative flex items-center">
       <span className="sr-only">{t("Language")}</span>
@@ -15,7 +32,7 @@ export function LanguageSwitcher() {
       </svg>
       <select
         value={lang}
-        onChange={(e) => setLang(e.target.value as Lang)}
+        onChange={(e) => choose(e.target.value as Lang)}
         className="appearance-none rounded-lg border border-line bg-surface-2 py-1.5 ps-8 pe-3 text-sm text-ink-soft hover:border-line-strong"
       >
         {LANGUAGES.map((l) => (

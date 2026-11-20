@@ -604,5 +604,18 @@ const messages: Record<string, string> = {
   "Up to {n} AI requests per day (finding highlights, writing descriptions).": "حتى {n} طلبًا للذكاء الاصطناعي يوميًا (إيجاد اللحظات المميزة، كتابة الأوصاف).",
   "You're all set. Add your first video and let Twapza find the best moments.": "كل شيء جاهز. أضف أول فيديو ودع Twapza يجد أفضل اللحظات.",
   "Your email address is confirmed": "تم تأكيد بريدك الإلكتروني",
+  "Twapza: turn long videos into viral Shorts with AI": "Twapza: حوّل الفيديوهات الطويلة إلى مقاطع Shorts رائجة بالذكاء الاصطناعي",
+  "How Twapza works, step by step": "كيف يعمل Twapza، خطوة بخطوة",
+  "From long video to finished Short: add a video, let AI find the best moments, adjust your clip, style the captions and download it with a title and description.": "من فيديو طويل إلى مقطع Short جاهز: أضف فيديو، ودع الذكاء الاصطناعي يجد أفضل اللحظات، وعدّل مقطعك، واختر نمط الترجمة، ثم نزّله مع عنوان ووصف.",
+  "AI clipping features: highlights, captions and hooks": "ميزات القص بالذكاء الاصطناعي: أبرز اللحظات والترجمة والخطافات",
+  "AI highlights with a virality score, animated captions in any language, hook text, cold opens, pause and filler-word removal, and a drag-and-drop clip editor.": "أبرز اللحظات بالذكاء الاصطناعي مع درجة انتشار، وترجمة متحركة بأي لغة، ونص خطاف، وافتتاحيات تشويقية، وحذف التوقفات وكلمات الحشو، ومحرر مقاطع بالسحب والإفلات.",
+  "Twapza for podcasters, YouTubers, educators and streamers": "Twapza لصانعي البودكاست واليوتيوبرز والمعلمين والستريمرز",
+  "How podcasters, YouTubers, coaches, streamers and clippers turn their long videos into Shorts, TikToks and Reels with Twapza.": "كيف يحوّل صانعو البودكاست واليوتيوبرز والمدربون والستريمرز وصانعو المقاطع فيديوهاتهم الطويلة إلى Shorts وTikTok وReels باستخدام Twapza.",
+  "Pricing: start free, upgrade when you post more": "الأسعار: ابدأ مجانًا وقم بالترقية عندما تنشر أكثر",
+  "Start free with 60 minutes of video per month. Creator and Pro add more minutes, longer videos, no watermark and the clip editor.": "ابدأ مجانًا مع 60 دقيقة من الفيديو شهريًا. تضيف خطتا صانع المحتوى وPro دقائق أكثر وفيديوهات أطول وبدون علامة مائية ومحرر المقاطع.",
+  "Short, practical guides on hooks, the best length for Shorts, captions and more, so your clips get watched.": "أدلة قصيرة وعملية عن الخطافات وأفضل مدة لمقاطع Shorts والترجمة وغير ذلك، حتى تُشاهد مقاطعك.",
+  "The features we are working on next, and how to reach us with ideas or questions.": "الميزات التي نعمل عليها الآن، وكيف تتواصل معنا بأفكارك أو أسئلتك.",
+  "How Twapza handles your account, your videos and your data. Videos are deleted automatically after 24 hours.": "كيف يتعامل Twapza مع حسابك وفيديوهاتك وبياناتك. تُحذف الفيديوهات تلقائيًا بعد 24 ساعة.",
+  "The terms for using Twapza, its free plan and its paid subscriptions.": "شروط استخدام Twapza وخطته المجانية واشتراكاته المدفوعة.",
 };
 export default messages;

@@ -1,4 +1,6 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+
+import { Link } from "./links";
 
 import { useT } from "../i18n";
 import { GUIDES } from "./content";

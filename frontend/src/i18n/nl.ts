@@ -604,5 +604,18 @@ const messages: Record<string, string> = {
   "Up to {n} AI requests per day (finding highlights, writing descriptions).": "Tot {n} AI-verzoeken per dag (highlights zoeken, beschrijvingen schrijven).",
   "You're all set. Add your first video and let Twapza find the best moments.": "Je bent klaar. Voeg je eerste video toe en laat Twapza de beste momenten vinden.",
   "Your email address is confirmed": "Je e-mailadres is bevestigd",
+  "Twapza: turn long videos into viral Shorts with AI": "Twapza: maak van lange video's virale Shorts met AI",
+  "How Twapza works, step by step": "Zo werkt Twapza, stap voor stap",
+  "From long video to finished Short: add a video, let AI find the best moments, adjust your clip, style the captions and download it with a title and description.": "Van lange video naar kant-en-klare Short: voeg een video toe, laat AI de beste momenten vinden, pas je clip aan, kies de ondertitelstijl en download hem met titel en beschrijving.",
+  "AI clipping features: highlights, captions and hooks": "AI-clipfuncties: highlights, ondertitels en hooks",
+  "AI highlights with a virality score, animated captions in any language, hook text, cold opens, pause and filler-word removal, and a drag-and-drop clip editor.": "AI-highlights met een viraliteitsscore, geanimeerde ondertitels in elke taal, hooktekst, cold opens, pauzes en stopwoorden weghalen, en een clip-editor met slepen en neerzetten.",
+  "Twapza for podcasters, YouTubers, educators and streamers": "Twapza voor podcasters, YouTubers, docenten en streamers",
+  "How podcasters, YouTubers, coaches, streamers and clippers turn their long videos into Shorts, TikToks and Reels with Twapza.": "Zo maken podcasters, YouTubers, coaches, streamers en clippers met Twapza Shorts, TikToks en Reels van hun lange video's.",
+  "Pricing: start free, upgrade when you post more": "Prijzen: begin gratis, upgrade als je meer post",
+  "Start free with 60 minutes of video per month. Creator and Pro add more minutes, longer videos, no watermark and the clip editor.": "Begin gratis met 60 minuten video per maand. Maker en Pro geven je meer minuten, langere video's, geen watermerk en de clip-editor.",
+  "Short, practical guides on hooks, the best length for Shorts, captions and more, so your clips get watched.": "Korte, praktische gidsen over hooks, de beste lengte voor Shorts, ondertitels en meer, zodat je clips bekeken worden.",
+  "The features we are working on next, and how to reach us with ideas or questions.": "De functies waar we nu aan werken, en hoe je ons bereikt met ideeën of vragen.",
+  "How Twapza handles your account, your videos and your data. Videos are deleted automatically after 24 hours.": "Hoe Twapza omgaat met je account, je video's en je gegevens. Video's worden na 24 uur automatisch verwijderd.",
+  "The terms for using Twapza, its free plan and its paid subscriptions.": "De voorwaarden voor het gebruik van Twapza, het gratis abonnement en de betaalde abonnementen.",
 };
 export default messages;

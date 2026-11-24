@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "./links";
 
 import { msg, useT } from "../i18n";
 import { CONTACT_EMAIL } from "./legal/types";
@@ -107,7 +107,11 @@ const GOOD_TO_KNOW: { q: string; a: string }[] = [
 /** Plays only while on screen (and not at all for people who prefer reduced motion). */
 function DemoVideo({ src, poster, label }: { src: string; poster: string; label: string }) {
   const ref = useRef<HTMLVideoElement>(null);
-  const [reduced] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+  // Read after the first render, so the pre-rendered HTML and the browser's first render match.
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    setReduced(Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches));
+  }, []);
   useEffect(() => {
     const video = ref.current;
     if (!video || reduced || typeof IntersectionObserver === "undefined") return;

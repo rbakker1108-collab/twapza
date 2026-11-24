@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, Route, Routes } from "react-router-dom";
 
 import { api } from "./api/client";
@@ -12,6 +12,7 @@ import { ComingSoonPage } from "./marketing/ComingSoonPage";
 import { HowItWorksPage } from "./marketing/HowItWorksPage";
 import { LandingPage } from "./marketing/LandingPage";
 import { PrivacyPage, TermsPage } from "./marketing/LegalPage";
+import { PREFIXED_LANGS } from "./marketing/locale";
 import { MarketingLayout } from "./marketing/MarketingLayout";
 import { PricingPage } from "./marketing/PricingPage";
 import { GuidePage, ResourcesPage } from "./marketing/ResourcesPage";
@@ -21,21 +22,33 @@ import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage, VerifyEma
 import { ProjectPage } from "./pages/ProjectPage";
 import { UploadPage } from "./pages/UploadPage";
 
+/** The website pages, in English at the plain address and under /nl, /es, … in other languages. */
+function websitePages(prefix: string) {
+  const pages: [string, ReactNode][] = [
+    ["/", <LandingPage />],
+    ["/features", <FeaturesPage />],
+    ["/solutions", <SolutionsPage />],
+    ["/pricing", <PricingPage />],
+    ["/resources", <ResourcesPage />],
+    ["/resources/:slug", <GuidePage />],
+    ["/how-it-works", <HowItWorksPage />],
+    ["/coming-soon", <ComingSoonPage />],
+    ["/privacy", <PrivacyPage />],
+    ["/terms", <TermsPage />],
+  ];
+  return pages.map(([path, element]) => {
+    const full = prefix + (path === "/" && prefix ? "" : path);
+    return <Route key={full} path={full} element={element} />;
+  });
+}
+
 /** The website lives at /, /features, … (+ login pages); the app (logged in only) at /app, /projects/:id, /account. */
 export function App() {
   return (
     <Routes>
       <Route element={<MarketingLayout />}>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/features" element={<FeaturesPage />} />
-        <Route path="/solutions" element={<SolutionsPage />} />
-        <Route path="/pricing" element={<PricingPage />} />
-        <Route path="/resources" element={<ResourcesPage />} />
-        <Route path="/resources/:slug" element={<GuidePage />} />
-        <Route path="/how-it-works" element={<HowItWorksPage />} />
-        <Route path="/coming-soon" element={<ComingSoonPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/terms" element={<TermsPage />} />
+        {websitePages("")}
+        {PREFIXED_LANGS.map((lang) => websitePages(`/${lang}`))}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

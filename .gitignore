@@ -10,6 +10,7 @@ backend/build/
 # Node
 node_modules/
 frontend/dist/
+frontend/dist-ssr/
 
 # Local data / secrets
 .env

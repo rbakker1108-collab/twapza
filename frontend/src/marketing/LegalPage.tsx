@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "./links";
 
 import { useI18n } from "../i18n";
 import { PRIVACY } from "./legal/privacy";

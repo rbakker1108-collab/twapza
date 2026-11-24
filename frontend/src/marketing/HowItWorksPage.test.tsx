@@ -1,10 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { HowItWorksPage } from "./HowItWorksPage";
+import { sitemapXml } from "./seo";
 
 describe("How it works page", () => {
   it("shows the six steps with their screenshots and videos", () => {
@@ -23,6 +24,6 @@ describe("How it works page", () => {
   });
 
   it("is in the sitemap", () => {
-    expect(readFileSync(join(__dirname, "../../public/sitemap.xml"), "utf8")).toContain("/how-it-works");
+    expect(sitemapXml()).toContain("https://www.twapza.io/how-it-works</loc>");
   });
 });

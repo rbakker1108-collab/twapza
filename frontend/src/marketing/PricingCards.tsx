@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "./links";
 
 import type { PlanId } from "../api/client";
 import { choosePlan, useAuth } from "../auth/AuthProvider";

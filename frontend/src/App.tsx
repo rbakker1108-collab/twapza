@@ -7,6 +7,7 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { Logo } from "./components/Logo";
 import { useT } from "./i18n";
+import { CompareIndexPage, ComparisonPage } from "./marketing/ComparePage";
 import { FeaturesPage } from "./marketing/FeaturesPage";
 import { ComingSoonPage } from "./marketing/ComingSoonPage";
 import { HowItWorksPage } from "./marketing/HowItWorksPage";
@@ -31,6 +32,8 @@ function websitePages(prefix: string) {
     ["/pricing", <PricingPage />],
     ["/resources", <ResourcesPage />],
     ["/resources/:slug", <GuidePage />],
+    ["/compare", <CompareIndexPage />],
+    ["/compare/:slug", <ComparisonPage />],
     ["/how-it-works", <HowItWorksPage />],
     ["/coming-soon", <ComingSoonPage />],
     ["/privacy", <PrivacyPage />],

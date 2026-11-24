@@ -1,9 +1,8 @@
 import { useParams } from "react-router-dom";
 
-import { Link } from "./links";
-
 import { useT } from "../i18n";
-import { GUIDES } from "./content";
+import { COMPARISONS, GUIDES } from "./content";
+import { Link } from "./links";
 import { PageHero, PrimaryButton, Section } from "./ui";
 
 export function ResourcesPage() {
@@ -21,6 +20,16 @@ export function ResourcesPage() {
               <span className="mt-4 text-sm font-medium text-brand-400">{t("Read the guide")} →</span>
             </Link>
           ))}
+        </div>
+        <div className="mt-12 rounded-2xl border border-line bg-surface p-6">
+          <h2 className="text-lg font-semibold">{t("Compare Twapza")}</h2>
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+            {COMPARISONS.map((c) => (
+              <Link key={c.slug} to={`/compare/${c.slug}`} className="text-brand-400 hover:underline">
+                {t("Twapza vs {name}", { name: c.name })}
+              </Link>
+            ))}
+          </div>
         </div>
       </Section>
     </>

@@ -148,6 +148,9 @@ export function MarketingLayout() {
             <Link to="/resources" className="block text-muted hover:text-ink">
               {t("Guides")}
             </Link>
+            <Link to="/compare" className="block text-muted hover:text-ink">
+              {t("Compare")}
+            </Link>
             <Link to="/#faq" className="block text-muted hover:text-ink">
               {t("FAQ")}
             </Link>

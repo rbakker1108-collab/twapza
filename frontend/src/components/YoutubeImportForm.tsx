@@ -4,15 +4,17 @@ import { useT } from "../i18n";
 
 interface Props {
   onImport: (url: string) => Promise<void>;
+  /** A link to start with (pasted on the website before signing up). */
+  initialUrl?: string;
 }
 
 /** Quick client-side check; the server validates the link properly. */
 export const looksLikeYoutubeLink = (url: string) =>
   /^(https?:\/\/)?((www|m|music)\.)?(youtube\.com|youtu\.be)\/\S+/i.test(url.trim());
 
-export function YoutubeImportForm({ onImport }: Props) {
+export function YoutubeImportForm({ onImport, initialUrl = "" }: Props) {
   const t = useT();
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialUrl);
   const [rights, setRights] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,6 +60,12 @@ export function YoutubeImportForm({ onImport }: Props) {
           {t("A video you posted (public or unlisted). Twapza downloads it in up to 1080p.")}
         </p>
       </div>
+
+      {initialUrl && url === initialUrl && !rights && (
+        <p className="rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-sm text-ink">
+          {t("Your link is ready. Confirm below that you may use this video, then start the import.")}
+        </p>
+      )}
 
       <label className="flex items-start gap-3 text-sm">
         <input

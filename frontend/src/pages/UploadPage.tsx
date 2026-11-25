@@ -7,6 +7,7 @@ import { RecentProjects } from "../components/RecentProjects";
 import { UploadForm } from "../components/UploadForm";
 import { YoutubeImportForm } from "../components/YoutubeImportForm";
 import { useT } from "../i18n";
+import { clearPendingLink, readPendingLink } from "../lib/pendingLink";
 import { uploadFile } from "../lib/upload";
 
 type Source = "youtube" | "file";
@@ -17,6 +18,8 @@ export function UploadPage() {
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [source, setSource] = useState<Source>("youtube");
   const { account, refresh } = useAuth();
+  // A link pasted on the website before signing up waits here until it is imported.
+  const [pendingLink] = useState(() => readPendingLink());
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
@@ -71,8 +74,10 @@ export function UploadPage() {
           )}
           {active === "youtube" ? (
             <YoutubeImportForm
+              initialUrl={pendingLink ?? undefined}
               onImport={async (url) => {
                 const { project } = await api.importYoutube(url, true);
+                clearPendingLink();
                 navigate(`/projects/${project.id}`);
               }}
             />

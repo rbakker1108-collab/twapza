@@ -5,15 +5,31 @@ import { useAuth } from "../auth/AuthProvider";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { Logo } from "../components/Logo";
 import { msg, savedLang, useI18n, useT } from "../i18n";
+import { AUDIENCES, TOOLS } from "./content";
 import { CONTACT_EMAIL } from "./legal/types";
 import { Link, NavLink } from "./links";
 import { isLocalizedPath, localize, splitLang } from "./locale";
 import { useDocumentHead } from "./useDocumentHead";
 
-export const NAV = [
+interface NavItem {
+  to: string;
+  label: string;
+  children?: { to: string; label: string }[];
+}
+
+export const NAV: NavItem[] = [
   { to: "/how-it-works", label: msg("How it works") },
   { to: "/features", label: msg("Features") },
-  { to: "/solutions", label: msg("Solutions") },
+  {
+    to: "/solutions",
+    label: msg("Solutions"),
+    children: AUDIENCES.map((a) => ({ to: `/solutions/${a.slug}`, label: a.title })),
+  },
+  {
+    to: "/tools",
+    label: msg("Tools"),
+    children: TOOLS.map((x) => ({ to: `/tools/${x.slug}`, label: x.name })),
+  },
   { to: "/pricing", label: msg("Pricing") },
   { to: "/resources", label: msg("Resources") },
   { to: "/coming-soon", label: msg("Coming soon") },
@@ -60,12 +76,16 @@ export function MarketingLayout() {
           <Link to="/" aria-label="Twapza">
             <Logo />
           </Link>
-          <nav className="hidden items-center gap-1 text-sm md:flex">
-            {NAV.map((n) => (
-              <NavLink key={n.to} to={n.to} className={link}>
-                {t(n.label)}
-              </NavLink>
-            ))}
+          <nav className="hidden items-center gap-0.5 whitespace-nowrap text-sm xl:flex">
+            {NAV.map((n) =>
+              n.children ? (
+                <NavMenu key={n.to} item={n} linkClass={link} />
+              ) : (
+                <NavLink key={n.to} to={n.to} className={link}>
+                  {t(n.label)}
+                </NavLink>
+              ),
+            )}
           </nav>
           <div className="ms-auto flex items-center gap-3">
             <div className="hidden sm:block">
@@ -74,18 +94,18 @@ export function MarketingLayout() {
             {account ? (
               <Link
                 to="/app"
-                className="rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-black transition hover:bg-brand-400"
+                className="whitespace-nowrap rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-black transition hover:bg-brand-400"
               >
                 {t("Open Twapza")}
               </Link>
             ) : (
               <>
-                <Link to="/login" className="hidden text-sm text-muted hover:text-ink sm:block">
+                <Link to="/login" className="hidden whitespace-nowrap text-sm text-muted hover:text-ink sm:block">
                   {t("Log in")}
                 </Link>
                 <Link
                   to="/signup"
-                  className="rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-black transition hover:bg-brand-400"
+                  className="whitespace-nowrap rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-black transition hover:bg-brand-400"
                 >
                   {t("Start for free")}
                 </Link>
@@ -93,7 +113,7 @@ export function MarketingLayout() {
             )}
             <button
               type="button"
-              className="rounded-lg p-1.5 text-muted hover:bg-surface-2 md:hidden"
+              className="rounded-lg p-1.5 text-muted hover:bg-surface-2 xl:hidden"
               aria-label={t("Menu")}
               aria-expanded={open}
               onClick={() => setOpen(!open)}
@@ -105,11 +125,22 @@ export function MarketingLayout() {
           </div>
         </div>
         {open && (
-          <nav className="space-y-1 border-t border-line px-4 py-3 md:hidden">
+          <nav className="max-h-[75vh] space-y-1 overflow-y-auto border-t border-line px-4 py-3 xl:hidden">
             {NAV.map((n) => (
-              <NavLink key={n.to} to={n.to} className={({ isActive }) => `block ${link({ isActive })}`}>
-                {t(n.label)}
-              </NavLink>
+              <div key={n.to}>
+                <NavLink to={n.to} end className={({ isActive }) => `block ${link({ isActive })}`}>
+                  {t(n.label)}
+                </NavLink>
+                {n.children && (
+                  <div className="ms-3 border-s border-line ps-2">
+                    {n.children.map((c) => (
+                      <NavLink key={c.to} to={c.to} className={({ isActive }) => `block text-sm ${link({ isActive })}`}>
+                        {t(c.label)}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
             {!account && (
               <Link to="/login" className={`block ${link({ isActive: false })}`}>
@@ -175,6 +206,53 @@ export function MarketingLayout() {
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/** A menu item with a dropdown (Solutions, Tools): opens on hover, or with the arrow button. */
+function NavMenu({ item, linkClass }: { item: NavItem; linkClass: (a: { isActive: boolean }) => string }) {
+  const t = useT();
+  const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [pathname]);
+  return (
+    <div
+      className="relative flex items-center"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+    >
+      <NavLink to={item.to} end className={(a) => `${linkClass(a)} pe-1`}>
+        {t(item.label)}
+      </NavLink>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={t(item.label)}
+        onClick={() => setOpen(!open)}
+        className="rounded p-0.5 text-muted hover:text-ink"
+      >
+        <svg viewBox="0 0 20 20" className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} aria-hidden>
+          <path fill="none" stroke="currentColor" strokeWidth="1.8" d="m5 8 5 5 5-5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute start-0 top-full z-50 pt-2">
+          <div className="w-64 rounded-xl border border-line bg-surface p-1.5 shadow-2xl shadow-black/50">
+            {item.children!.map((c) => (
+              <NavLink
+                key={c.to}
+                to={c.to}
+                className={({ isActive }) =>
+                  `block rounded-lg px-3 py-2 ${isActive ? "bg-surface-2 text-ink" : "text-ink-soft hover:bg-surface-2 hover:text-ink"}`}
+              >
+                {t(c.label)}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

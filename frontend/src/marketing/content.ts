@@ -26,6 +26,8 @@ export const FEATURES: Item[] = [
 ];
 
 export interface Audience {
+  slug: string; // /solutions/<slug>
+  guide: string; // the guide slug linked from its page
   icon: string;
   title: string;
   text: string;
@@ -35,30 +37,40 @@ export interface Audience {
 export const AUDIENCES: Audience[] = [
   {
     icon: "mic",
+    slug: "podcasters",
+    guide: "podcast-to-shorts",
     title: msg("Podcasters"),
     text: msg("Turn every episode into a week of Shorts. Twapza finds the quotes, stories and hot takes that make people want the full episode."),
     points: [msg("Episodes of up to 3 hours"), msg("Captions that follow every speaker"), msg("A credit and link to the full episode in every description")],
   },
   {
     icon: "video",
+    slug: "youtubers",
+    guide: "repurpose-for-tiktok-and-reels",
     title: msg("YouTubers"),
     text: msg("Give your long videos a second life on Shorts, the fastest way to reach new viewers and bring them to your channel."),
     points: [msg("Paste your video link, no download needed"), msg("Hooks and titles written for the Shorts feed"), msg("Clips that end on a loop-friendly line")],
   },
   {
     icon: "school",
+    slug: "coaches-and-educators",
+    guide: "moments-that-make-great-shorts",
     title: msg("Coaches and educators"),
     text: msg("Share your best tips and lessons as bite-sized clips that bring people to your courses, webinars and programs."),
     points: [msg("“Look for” lets AI find the tips you want"), msg("Clear captions for people watching without sound"), msg("Your own texts for calls to action")],
   },
   {
     icon: "game",
+    slug: "streamers",
+    guide: "length",
     title: msg("Streamers"),
     text: msg("Your stream's funniest and most intense moments, clipped and captioned while you sleep."),
     points: [msg("Finds peaks with audio energy and scene changes"), msg("Simple clips for whole-stream highlights"), msg("Progress bar and fast pacing built in")],
   },
   {
     icon: "team",
+    slug: "agencies",
+    guide: "captions",
     title: msg("Clippers and agencies"),
     text: msg("Produce more clips for the creators you work with, in their language, with the right credit every time."),
     points: [msg("Captions and app in six languages"), msg("Download all clips of a video at once"), msg("Only for videos you have permission to use")],
@@ -292,4 +304,71 @@ export const CHOOSE_TWAPZA = [
   msg("You want the app and captions in your own language, including Arabic."),
   msg("You want simple pricing per minute of video, with a free plan to start."),
   msg("You want clips with hooks, captions and a description, ready to post, without learning a video editor."),
+];
+
+export interface Tool {
+  slug: string; // /tools/<slug>
+  name: string; // menu label
+  heading: string;
+  intro: string;
+  points: { title: string; text: string }[];
+}
+
+/** One page per job people search for. Only describe what Twapza really does. */
+export const TOOLS: Tool[] = [
+  {
+    slug: "youtube-shorts-maker",
+    name: msg("YouTube Shorts maker"),
+    heading: msg("Make YouTube Shorts from your long videos"),
+    intro: msg("Paste a link to a video you posted and Twapza turns it into vertical Shorts: the best moments, animated captions and a hook, ready to upload."),
+    points: [
+      { title: msg("Finds the best moments"), text: msg("AI reads the whole transcript and ranks the moments most likely to keep people watching.") },
+      { title: msg("Vertical without losing the picture"), text: msg("Every clip is 1080×1920. Keep the whole frame on a blurred background, use black bars or crop the centre.") },
+      { title: msg("Ready to post"), text: msg("Captions, a hook on screen, and a title, description and hashtags for each Short.") },
+    ],
+  },
+  {
+    slug: "podcast-clip-generator",
+    name: msg("Podcast clip generator"),
+    heading: msg("Turn podcast episodes into short clips with AI"),
+    intro: msg("Add an episode of up to 3 hours and get the quotes, stories and hot takes that work on their own, captioned and ready for Shorts, TikTok and Reels."),
+    points: [
+      { title: msg("Moments that stand on their own"), text: msg("AI looks for moments that make sense without the rest of the episode.") },
+      { title: msg("Everyone stays in the picture"), text: msg("Fit two or more speakers into a vertical frame on a blurred background.") },
+      { title: msg("A link to the full episode"), text: msg("Every description can credit and link the full episode, so new listeners find it.") },
+    ],
+  },
+  {
+    slug: "auto-subtitle-generator",
+    name: msg("Auto subtitle generator"),
+    heading: msg("Automatic subtitles for your Shorts"),
+    intro: msg("Twapza transcribes your video automatically and adds animated word-by-word captions in dozens of languages. Download the clip with captions burned in, or the SRT file."),
+    points: [
+      { title: msg("Word-by-word captions"), text: msg("The spoken word lights up as it is said, in bold fonts and your own colours.") },
+      { title: msg("Dozens of languages"), text: msg("The spoken language is recognised automatically, including Spanish, German, French, Dutch and Arabic, written right to left.") },
+      { title: msg("SRT file included"), text: msg("Download a subtitle file for each clip, for platforms that accept one, like YouTube.") },
+    ],
+  },
+  {
+    slug: "youtube-clip-maker",
+    name: msg("YouTube clip maker"),
+    heading: msg("Cut clips from your YouTube videos"),
+    intro: msg("Let AI find the highlights or split the whole video into clips. Trim each clip to the second, fix the captions and download it in 1080p."),
+    points: [
+      { title: msg("AI or simple clips"), text: msg("Let AI find the highlights, or split the whole video into clips of a fixed length that end on full sentences.") },
+      { title: msg("Trim to the second"), text: msg("Move the start and end of any clip; cuts land between words, never in the middle of one.") },
+      { title: msg("Vertical or original"), text: msg("Download vertical 9:16 for Shorts, or keep the original shape of your video.") },
+    ],
+  },
+  {
+    slug: "tiktok-and-reels-clips",
+    name: msg("TikTok and Reels clips"),
+    heading: msg("Turn YouTube videos into TikToks and Reels"),
+    intro: msg("One long video, clips for every platform. Twapza makes vertical videos with captions and hooks that work on TikTok, Instagram Reels and YouTube Shorts alike."),
+    points: [
+      { title: msg("One format for all"), text: msg("1080×1920 vertical video, the format TikTok, Reels and Shorts all use.") },
+      { title: msg("Hooks that stop the scroll"), text: msg("Bold hook text, a cold open and cut pauses keep viewers watching.") },
+      { title: msg("Text for every post"), text: msg("AI writes a description, title ideas and hashtags you can paste into any app.") },
+    ],
+  },
 ];

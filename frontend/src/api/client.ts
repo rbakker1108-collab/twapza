@@ -82,6 +82,16 @@ export interface CaptionSettings {
   uppercase: boolean;
 }
 
+/** Languages captions can be translated into (backend: clipping/translation.py LANGUAGES). */
+export type CaptionLanguage = "en" | "es" | "fr" | "de" | "nl" | "pt" | "it" | "ar";
+
+/** A caption word in source time. */
+export interface CaptionWord {
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface ExportSettings {
   /** "9:16" = 1080x1920 for YouTube Shorts / TikTok / Reels. */
   aspect: Aspect;
@@ -91,6 +101,8 @@ export interface ExportSettings {
   upscale_1080: boolean;
   /** Burned-in word-by-word captions; null = none. */
   captions: CaptionSettings | null;
+  /** Captions translated into this language (Creator and up); null = as spoken. */
+  caption_language: CaptionLanguage | null;
   /** Optional retention boosts: the clip title as text on the first 3 seconds, */
   hook_text: boolean;
   /** its most gripping line played first as a teaser, */
@@ -315,6 +327,9 @@ export const api = {
       body: JSON.stringify({ overlays }),
     }),
   getClipWords: (clipId: string) => request<ClipWord[]>(`/api/clips/${clipId}/words`),
+  /** The clip's captions translated (translates what isn't cached yet; may take a few seconds). */
+  translateCaptions: (clipId: string, language: CaptionLanguage) =>
+    request<CaptionWord[]>(`/api/clips/${clipId}/translation`, json({ language })),
   saveCorrections: (projectId: string, fixes: { start: number; text: string }[]) =>
     request<Clip[]>(`/api/projects/${projectId}/corrections`, {
       method: "PUT",
@@ -334,8 +349,12 @@ export const api = {
   exportZip: (projectId: string, source: ClipSource, settings?: ExportSettings) =>
     request<Job>(`/api/projects/${projectId}/export-zip`, json({ source, settings })),
   /** Pass the export settings so the subtitle timing matches the download (cut pauses / cold open). */
-  subtitlesUrl: (clipId: string, settings?: Pick<ExportSettings, "cut_pauses" | "cold_open" | "cut_fillers">) => {
+  subtitlesUrl: (
+    clipId: string,
+    settings?: Pick<ExportSettings, "cut_pauses" | "cold_open" | "cut_fillers"> & { caption_language?: CaptionLanguage | null },
+  ) => {
     const params = new URLSearchParams();
+    if (settings?.caption_language) params.set("language", settings.caption_language);
     if (settings?.cut_pauses) params.set("cut_pauses", "true");
     if (settings?.cold_open) params.set("cold_open", "true");
     if (settings?.cut_fillers) params.set("cut_fillers", "true");

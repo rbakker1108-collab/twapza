@@ -12,8 +12,8 @@ from twapza.accounts.usage import plan_of
 from twapza.api.deps import current_user
 from twapza.api.routes.projects import get_project_or_404, serve_object
 from twapza.api.schemas import (
-    AiClipsRequest, ClipDescription, ClipRead, ClipWord, CorrectionsRequest, ExportRequest, JobRead,
-    OverlaysRequest, SimpleClipsRequest, TitleRequest, TrimRequest, ZipExportRequest,
+    AiClipsRequest, CaptionWord, ClipDescription, ClipRead, ClipWord, CorrectionsRequest, ExportRequest, JobRead,
+    OverlaysRequest, SimpleClipsRequest, TitleRequest, TranslationRequest, TrimRequest, ZipExportRequest,
 )
 from twapza.captions.srt import build_srt
 from twapza.clipping.descriptions import (
@@ -21,6 +21,7 @@ from twapza.clipping.descriptions import (
     normalize_hashtags, parse_copy, user_prompt,
 )
 from twapza.clipping.llm import HighlightError
+from twapza.clipping.translation import ClaudeTranslator, Language, Translator
 from twapza.config import Settings, get_settings
 from twapza.db.models import Clip, ClipSource, JobType, Project, ProjectStatus, User, new_id
 from twapza.db.session import get_session
@@ -29,8 +30,8 @@ from twapza.queue import completed_job, enqueue_job, get_queue, with_priority
 from twapza.storage import Storage, get_storage
 from twapza.clipping.timeline import is_filler
 from twapza.workers.tasks import (
-    clip_segments, export_clip, load_corrections, word_key, export_zip, generate_ai_clips, generate_simple_clips, load_transcript,
-    write_thumbnail,
+    caption_words, clip_segments, export_clip, load_corrections, word_key, export_zip, generate_ai_clips, generate_simple_clips,
+    load_transcript, translate_sentences, translations_prefix, untranslated, write_thumbnail,
 )
 
 MIN_TRIMMED_SECONDS = 3.0
@@ -62,9 +63,35 @@ def plan_settings(user: User, settings: ExportSettings) -> ExportSettings:
     """Apply the plan to export settings: watermark on Free; editing extras need Creator."""
     plan = plan_of(user)
     if not plan.editing and (settings.hook_text or settings.cold_open or settings.cut_pauses
-                             or settings.cut_fillers):
+                             or settings.cut_fillers or (settings.captions and settings.caption_language)):
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, NEEDS_CREATOR)
     return settings.model_copy(update={"watermark": plan.watermark, "texts": plan.editing})
+
+
+def get_translator(settings: Settings = Depends(get_settings)) -> Translator | None:
+    """Claude, if an API key is configured (replaced by a fake in tests)."""
+    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
+    return ClaudeTranslator(api_key=key, model=settings.claude_model) if key else None
+
+
+def ensure_translated(project: Project, language: str | None, spans: list[tuple[float, float]],
+                      user: User, translator: Translator | None) -> None:
+    """Translate (once, cached) the caption sentences inside ``spans``. Creator and up; a call to
+    Claude counts towards the daily AI limit, cached sentences don't."""
+    if not language:
+        return
+    _require_editing(user)
+    missing = untranslated(project, load_transcript(project), language, spans)
+    if not missing:
+        return
+    if translator is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "Caption translation isn't available on this server (no Claude API key).")
+    ratelimit.ai_daily(user.id, plan_of(user).ai_per_day)
+    try:
+        translate_sentences(project, language, missing, translator)
+    except HighlightError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from None
 
 
 @router.post("/projects/{project_id}/simple-clips", response_model=JobRead,
@@ -180,22 +207,25 @@ def clip_thumbnail(
 
 @router.get("/clips/{clip_id}/subtitles.srt")
 def clip_subtitles(clip_id: str, cut_pauses: bool = False, cold_open: bool = False,
-                   cut_fillers: bool = False, session: Session = Depends(get_session),
+                   cut_fillers: bool = False, language: Language | None = None,
+                   session: Session = Depends(get_session),
     user: User = Depends(current_user),
+    translator: Translator | None = Depends(get_translator),
 ) -> Response:
     """The clip's speech as an .srt subtitle file (times relative to the clip).
 
     Pass the same ``cut_pauses`` / ``cold_open`` / ``cut_fillers`` options as the download so the
-    timing matches.
+    timing matches, and ``language`` for translated subtitles.
     """
     clip = _clip_or_404(session, clip_id, user)
     project = _ready_project(session, clip.project_id, user)
+    ensure_translated(project, language, [(clip.start, clip.end)], user, translator)
     transcript = load_transcript(project)
     srt = None
     if transcript:
         segments = clip_segments(project, clip, transcript, cut_pauses=cut_pauses, cold_open=cold_open,
                                  cut_fillers=cut_fillers)
-        words = [w for w in transcript.words if not (cut_fillers and is_filler(w))]
+        words = [w for w in caption_words(project, transcript, language) if not (cut_fillers and is_filler(w))]
         srt = build_srt(words, segments=segments)
     if not srt:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "There is no speech in this clip.")
@@ -273,8 +303,27 @@ def save_corrections(
         clip.text = transcript.text_between(clip.start, clip.end)
         session.add(clip)
         storage.delete_prefix(clip.exports_prefix)
+    storage.delete_prefix(translations_prefix(project))  # translated from the old words
     session.commit()
     return [ClipRead.of(c) for c in clips]
+
+
+@router.post("/clips/{clip_id}/translation", response_model=list[CaptionWord])
+def translate_clip_captions(
+    clip_id: str,
+    body: TranslationRequest,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+    translator: Translator | None = Depends(get_translator),
+) -> list[CaptionWord]:
+    """The clip's caption words translated into ``language`` (source times), for the editor's
+    live preview. Translates what isn't cached yet."""
+    clip = _clip_or_404(session, clip_id, user)
+    project = _ready_project(session, clip.project_id, user)
+    ensure_translated(project, body.language, [(clip.start, clip.end)], user, translator)
+    words = caption_words(project, load_transcript(project), body.language)
+    return [CaptionWord(start=w.start, end=w.end, text=w.text.strip())
+            for w in words if w.text.strip() and w.end > clip.start and w.start < clip.end]
 
 
 @router.put("/clips/{clip_id}/title", response_model=ClipRead)
@@ -363,10 +412,13 @@ def create_export(
     storage: Storage = Depends(get_storage),
     queue: Queue = Depends(get_queue),
     user: User = Depends(current_user),
+    translator: Translator | None = Depends(get_translator),
 ) -> JobRead:
     clip = _clip_or_404(session, clip_id, user)
     project = _ready_project(session, clip.project_id, user)
-    settings = plan_settings(user, body.settings)
+    settings = plan_settings(user, body.settings).normalized()
+    # Translate before queuing, so the worker only renders (and errors show up right here).
+    ensure_translated(project, settings.caption_language, [(clip.start, clip.end)], user, translator)
     key = export_key(clip, settings)
     name = export_filename(project, clip, settings)
     if storage.exists(key):
@@ -387,6 +439,7 @@ def create_zip_export(
     session: Session = Depends(get_session),
     queue: Queue = Depends(get_queue),
     user: User = Depends(current_user),
+    translator: Translator | None = Depends(get_translator),
 ) -> JobRead:
     project = _ready_project(session, project_id, user)
     if not plan_of(user).zip:
@@ -398,6 +451,8 @@ def create_zip_export(
     clips = session.exec(query.order_by(Clip.index)).all()
     if not clips:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "There are no clips to export.")
+    settings = settings.normalized()
+    ensure_translated(project, settings.caption_language, [(c.start, c.end) for c in clips], user, translator)
     zip_key = f"{project.prefix}zips/{new_id()}.zip"
     job = enqueue_job(session, with_priority(queue, plan_of(user).priority), project_id=project_id,
                       job_type=JobType.EXPORT_ZIP,

@@ -139,6 +139,14 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `ass.progress_events`; ffmpeg's drawbox can't animate). AI highlights take an optional `focus`
   ("Look for…", appended to the cached system prompt as a quoted request). The frontend remembers
   the download settings in localStorage (`twapza.downloadSettings`, `ClipsWorkspace.loadSavedSettings`).
+- **Caption translation** (`clipping/translation.py`, Creator+): `ExportSettings.caption_language` (8 languages our fonts can
+  draw: `Language`/`LANGUAGES`, mirrored in `ExportOptions.CAPTION_LANGUAGES`). `split_sentences` groups the (corrected,
+  filler-free) words; `ClaudeTranslator` (same model, effort `low`, structured output, ≤120 lines per request) translates
+  each sentence once, cached in `translations/<lang>.json` as {sentence key: text}; `retime` spreads the translated words
+  over the original words' intervals, so highlight, cut pauses, cold open and .srt work unchanged (`tasks.caption_words`).
+  The API translates *before* queuing (`clips.ensure_translated`: export, ZIP, `.srt?language=`, and
+  `POST /api/clips/{id}/translation` for the editor preview); only a real Claude call counts towards `ai_daily`; the
+  worker never calls Claude. Saving caption fixes deletes the project's translations. `get_translator` is faked in tests.
 - **Captions** (`captions/`): `ExportSettings.captions` (`CaptionSettings`: font, colours,
   size, position, words per line, uppercase) → `captions/ass.py::build_ass` (pure: words in the
   clip range, rebased to 0, grouped into pages of N words broken at sentence ends/pauses; one

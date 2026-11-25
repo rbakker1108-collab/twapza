@@ -20,6 +20,9 @@ from twapza.clipping.highlights import ask_for_candidates, build_highlights
 from twapza.clipping.llm import ClaudeHighlighter, HighlightFinder, chunk_transcript
 from twapza.clipping.signals import detect_scene_cuts, energy_from_wav, loudness_between
 from twapza.clipping.simple import plan_simple_clips
+from twapza.clipping.translation import (
+    Translator, overlapping, sentence_key, sentence_text, split_sentences, translated_words,
+)
 from twapza.clipping.timeline import (
     Segment, find_quote, is_filler, pick_teaser, remove_pauses, with_cold_open,
 )
@@ -131,6 +134,73 @@ def ensure_transcript(project: Project, on_progress: Progress | None = None) -> 
     return transcript
 
 
+def translations_key(project: Project, language: str) -> str:
+    return f"{project.prefix}translations/{language}.json"
+
+
+def translations_prefix(project: Project) -> str:
+    return f"{project.prefix}translations/"
+
+
+def load_translations(project: Project, language: str) -> dict[str, str]:
+    """Cached caption translations: {sentence key: translated text}."""
+    storage = get_storage()
+    key = translations_key(project, language)
+    if not storage.exists(key):
+        return {}
+    try:
+        with storage.open(key) as f:
+            data = json.loads(f.read().decode("utf-8"))
+    except ValueError:
+        return {}
+    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def needs_translation(transcript: Transcript | None, language: str | None) -> bool:
+    return bool(language and transcript and transcript.language != language)
+
+
+def caption_words(project: Project, transcript: Transcript | None, language: str | None) -> list[Word]:
+    """The words captions show: the transcript's, or its cached translation (no API calls here;
+    sentences that weren't translated yet stay in the spoken language)."""
+    words = transcript.words if transcript else []
+    if not needs_translation(transcript, language):
+        return words
+    return translated_words(words, load_translations(project, language))
+
+
+def untranslated(project: Project, transcript: Transcript | None, language: str | None,
+                 spans: list[tuple[float, float]]) -> list[list[Word]]:
+    """The sentences inside ``spans`` that have no cached translation yet."""
+    if not needs_translation(transcript, language):
+        return []
+    done = load_translations(project, language)
+    sentences = split_sentences(transcript.words)
+    seen: set[str] = set()
+    out = []
+    for start, end in spans:
+        for s in overlapping(sentences, start, end):
+            key = sentence_key(s[0])
+            if key not in done and key not in seen:
+                seen.add(key)
+                out.append(list(s))
+    return out
+
+
+def translate_sentences(project: Project, language: str, sentences: list[list[Word]],
+                        translator: Translator) -> None:
+    """Translate and cache ``sentences`` (lines the model skipped stay untranslated)."""
+    if not sentences:
+        return
+    results = translator.translate([sentence_text(s) for s in sentences], language)
+    cache = load_translations(project, language)
+    for sentence, text in zip(sentences, results):
+        if text:
+            cache[sentence_key(sentence[0])] = text
+    with get_storage().write_path(translations_key(project, language)) as dst:
+        dst.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+
+
 def _clip(project_id: str, clip_id: str) -> Clip:
     with Session(get_engine()) as session:
         clip = session.get(Clip, clip_id)
@@ -204,7 +274,7 @@ def render_export(project: Project, clip: Clip, settings: ExportSettings,
     transcript = load_transcript(project)
     segments = clip_segments(project, clip, transcript, cut_pauses=settings.cut_pauses,
                              cold_open=settings.cold_open, cut_fillers=settings.cut_fillers)
-    words = transcript.words if transcript else []
+    words = caption_words(project, transcript, settings.caption_language if settings.captions else None)
     if settings.cut_fillers:
         words = [w for w in words if not is_filler(w)]
     hook = clip.title if settings.hook_text else None

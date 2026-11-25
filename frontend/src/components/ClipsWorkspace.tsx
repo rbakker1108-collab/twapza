@@ -50,7 +50,9 @@ export function ClipsWorkspace({ project, config }: Props) {
     ...options,
     upscale_1080: canUpscale(project) && options.upscale_1080,
     // Remembered options the current plan doesn't include are left out (e.g. after a downgrade).
-    ...(plan.editing ? {} : { hook_text: false, cold_open: false, cut_pauses: false, cut_fillers: false }),
+    ...(plan.editing
+      ? {}
+      : { hook_text: false, cold_open: false, cut_pauses: false, cut_fillers: false, caption_language: null }),
   };
 
   const tabClass = (t: Tab) =>

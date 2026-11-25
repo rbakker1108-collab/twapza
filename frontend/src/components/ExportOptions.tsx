@@ -1,6 +1,6 @@
 import { useRef } from "react";
 
-import type { CaptionSettings, ExportSettings, Project } from "../api/client";
+import type { CaptionLanguage, CaptionSettings, ExportSettings, Project } from "../api/client";
 import { usePlan } from "../auth/AuthProvider";
 import { UpgradeNote } from "../auth/UpgradeNote";
 import { msg, useT } from "../i18n";
@@ -11,6 +11,7 @@ export const DEFAULT_EXPORT: ExportSettings = {
   vertical_fit: "blur",
   upscale_1080: true,
   captions: DEFAULT_CAPTIONS,
+  caption_language: null,
   hook_text: false,
   cold_open: false,
   cut_pauses: false,
@@ -18,6 +19,18 @@ export const DEFAULT_EXPORT: ExportSettings = {
   cut_fillers: false,
   progress_bar: false,
 };
+
+/** Caption languages (keep in sync with backend clipping/translation.py LANGUAGES). */
+export const CAPTION_LANGUAGES: { code: CaptionLanguage; name: string }[] = [
+  { code: "en", name: msg("English") },
+  { code: "es", name: msg("Spanish") },
+  { code: "fr", name: msg("French") },
+  { code: "de", name: msg("German") },
+  { code: "nl", name: msg("Dutch") },
+  { code: "pt", name: msg("Portuguese") },
+  { code: "it", name: msg("Italian") },
+  { code: "ar", name: msg("Arabic") },
+];
 
 type Boost = "hook_text" | "cold_open" | "cut_pauses" | "cut_fillers" | "progress_bar";
 
@@ -213,6 +226,32 @@ export function ExportOptions({ project, value, onChange, disabled }: Props) {
           />
           {t("Subtitles")} <span className="font-normal text-muted">{t("(burned in, word-by-word highlight)")}</span>
         </label>
+        {value.captions && (
+          <label className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">{t("Caption language")}</span>
+            <select
+              value={plan.editing ? value.caption_language ?? "" : ""}
+              disabled={!plan.editing}
+              onChange={(e) => set({ caption_language: (e.target.value || null) as CaptionLanguage | null })}
+              className="rounded-lg border border-line-strong bg-surface-2 px-2 py-1.5 disabled:opacity-60"
+            >
+              <option value="">{t("As spoken (no translation)")}</option>
+              {CAPTION_LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {t("Translate to {language}", { language: t(l.name) })}
+                </option>
+              ))}
+            </select>
+            {!plan.editing && (
+              <span className="rounded bg-brand-500/15 px-1.5 text-[11px] font-semibold text-brand-300">{t("Creator")}</span>
+            )}
+            {plan.editing && value.caption_language && (
+              <span className="basis-full text-muted">
+                {t("AI translates the subtitles; names and numbers stay as they are. Check the preview in the editor.")}
+              </span>
+            )}
+          </label>
+        )}
         {value.captions && (
           <CaptionOptions value={value.captions} onChange={setCaptions} vertical={vertical || !project.width || (project.height ?? 0) > project.width} />
         )}

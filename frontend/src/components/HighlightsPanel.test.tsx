@@ -5,7 +5,7 @@ import { api, type ExportSettings } from "../api/client";
 import { makeClip, makeProject } from "../test-fixtures";
 import { HighlightsPanel } from "./HighlightsPanel";
 
-const settings: ExportSettings = { aspect: "9:16", vertical_fit: "crop", upscale_1080: false, captions: null, hook_text: false, cold_open: false, cut_pauses: false, hook_full: false, cut_fillers: false, progress_bar: false };
+const settings: ExportSettings = { aspect: "9:16", vertical_fit: "crop", upscale_1080: false, captions: null, caption_language: null, hook_text: false, cold_open: false, cut_pauses: false, hook_full: false, cut_fillers: false, progress_bar: false };
 const ai = (i: number, over = {}) =>
   makeClip({ id: `a${i}`, source: "ai", index: i, start: 100 * i, end: 100 * i + 40, duration: 40,
              suggested_start: 100 * i, suggested_end: 100 * i + 40, title: `Moment ${i}`,

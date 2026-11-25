@@ -199,6 +199,16 @@ describe("ClipEditor: edit everything, then download", () => {
     expect(within(live).getByText("BIG")).toHaveStyle({ color: "#FFD400" });
   });
 
+  it("previews translated captions", async () => {
+    const translate = vi.spyOn(api, "translateCaptions").mockResolvedValue(
+      WORDS.map((w, i) => ({ start: w.start, end: w.end, text: ["Hallo", "grote", "wereld."][i] ?? "x" })),
+    );
+    renderEditor(makeClip(), vi.fn(), vi.fn(), { ...DEFAULT_EXPORT, caption_language: "nl" }, vi.fn(), WORDS);
+    await waitFor(() => expect(translate).toHaveBeenCalledWith(makeClip().id, "nl"));
+    fireEvent.change(screen.getByRole("slider", { name: "Position in clip" }), { target: { value: "1.1" } });
+    expect(await screen.findByTestId("live-caption")).toHaveTextContent("HALLO GROTE WERELD.");
+  });
+
   it("previews caption fixes before they are saved", async () => {
     const user = userEvent.setup();
     renderEditor(makeClip(), vi.fn(), vi.fn(), DEFAULT_EXPORT, vi.fn(), WORDS);

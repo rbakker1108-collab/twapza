@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from twapza.captions.style import CaptionSettings
+from twapza.clipping.translation import Language
 from twapza.db.models import Clip, Project
 from twapza.media import ffmpeg
 
@@ -28,6 +29,8 @@ class ExportSettings(BaseModel):
     upscale_1080: bool = True
     # Burned-in word-by-word captions; None = no captions.
     captions: CaptionSettings | None = None
+    # Show the captions translated into this language (see clipping/translation.py); None = as spoken.
+    caption_language: Language | None = None
     # Optional retention boosts (all off by default):
     # the clip's title as bold text at the top for the first 3 seconds,
     hook_text: bool = False
@@ -49,11 +52,11 @@ class ExportSettings(BaseModel):
 
     def normalized(self) -> "ExportSettings":
         """Drop options that don't affect the output, so equal outputs share a cache key."""
-        out = self.model_copy(update={"hook_full": self.hook_full and self.hook_text})
+        out = self.model_copy(update={"hook_full": self.hook_full and self.hook_text,
+                                      "caption_language": self.caption_language if self.captions else None})
         if self.aspect == "9:16":
             return out.model_copy(update={"upscale_1080": False})
         return out.model_copy(update={"vertical_fit": "blur"})
-
 
 def video_filter(settings: ExportSettings, width: int, height: int) -> str | None:
     """The ffmpeg video filter for these export settings and source size."""
@@ -62,7 +65,6 @@ def video_filter(settings: ExportSettings, width: int, height: int) -> str | Non
     if settings.upscale_1080:
         return ffmpeg.upscale_filter(width, height)
     return None
-
 
 def output_size(settings: ExportSettings, width: int, height: int) -> tuple[int, int]:
     """Frame size of the exported video, given the source's *display* size."""
@@ -74,7 +76,6 @@ def output_size(settings: ExportSettings, width: int, height: int) -> tuple[int,
         even = lambda x: int(round(x * scale / 2)) * 2  # noqa: E731
         return (1080, even(height)) if width < height else (even(width), 1080)
     return width, height
-
 
 def export_key(clip: Clip, settings: ExportSettings) -> str:
     # The hook text and the teaser come from the clip, so they are part of the key too.
@@ -88,23 +89,19 @@ def export_key(clip: Clip, settings: ExportSettings) -> str:
     digest = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
     return f"{clip.exports_prefix}{digest}.mp4"
 
-
 def _timestamp(seconds: float) -> str:
     s = int(seconds)
     h, m, sec = s // 3600, s % 3600 // 60, s % 60
     return f"{h}h{m:02d}m{sec:02d}s" if h else f"{m:02d}m{sec:02d}s"
 
-
 def safe_stem(name: str) -> str:
     stem = re.sub(r"[^\w\-. ]+", "", name, flags=re.UNICODE).strip().replace(" ", "_")
     return stem[:80] or "video"
-
 
 def export_filename(project: Project, clip: Clip, settings: ExportSettings | None = None) -> str:
     suffix = "_vertical" if settings and settings.aspect == "9:16" else ""
     return (f"{safe_stem(project.stem)}_{clip.source.value}{clip.index:02d}_"
             f"{_timestamp(clip.start)}-{_timestamp(clip.end)}{suffix}.mp4")
-
 
 def zip_filename(project: Project) -> str:
     return f"{safe_stem(project.stem)}_clips.zip"

@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from twapza.clipping.translation import Language
 from twapza.exports import ExportSettings
 
 from twapza.db.models import Clip, ClipSource, Job, JobStatus, JobType, Project, ProjectStatus
@@ -154,6 +155,16 @@ class ClipWord(BaseModel):
     end: float
     text: str           # as shown in captions (after fixes; "" = hidden)
     original: str       # as transcribed
+
+
+class CaptionWord(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class TranslationRequest(BaseModel):
+    language: Language
 
 
 class WordFix(BaseModel):

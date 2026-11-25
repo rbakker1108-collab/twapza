@@ -41,6 +41,7 @@ export const PLANS: Plan[] = [
       msg("No watermark"),
       msg("Clip editor: hook text, your own texts, caption fixes"),
       msg("AI titles, descriptions and hashtags"),
+      msg("Captions translated into 8 languages"),
       msg("Cut pauses, filler words and cold open"),
     ],
     popular: true,

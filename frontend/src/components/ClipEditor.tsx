@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 import {
-  api, type CaptionFont, type Clip, type ClipWord, type ExportSettings, type Job, type OverlayStyle, type Project,
+  api, type CaptionFont, type CaptionLanguage, type CaptionWord, type Clip, type ClipWord, type ExportSettings, type Job, type OverlayStyle, type Project,
   type TextOverlay,
 } from "../api/client";
 import { usePlan } from "../auth/AuthProvider";
@@ -82,6 +82,10 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [wordsError, setWordsError] = useState<string | null>(null);
+  // Translated caption words for the preview (when "Caption language" is set).
+  const [translated, setTranslated] = useState<{ language: CaptionLanguage; words: CaptionWord[] } | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const captionLanguage = settings.captions ? settings.caption_language : null;
   const rendering = !!job && !isFinished(job);
   const video = useRef<HTMLVideoElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -92,12 +96,16 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
   // Caption words on the clip's timeline, with unsaved fixes applied (for the live preview).
   const captionPages = useMemo(() => {
     if (!words || !settings.captions) return [];
-    const timed: TimedWord[] = words
-      .map((w) => ({ text: (edits[w.start] ?? w.text).trim(), start: w.start - clip.start, end: w.end - clip.start }))
+    const source: { start: number; end: number; text: string }[] =
+      captionLanguage && translated?.language === captionLanguage
+        ? translated.words
+        : words.map((w) => ({ ...w, text: edits[w.start] ?? w.text }));
+    const timed: TimedWord[] = source
+      .map((w) => ({ text: w.text.trim(), start: w.start - clip.start, end: w.end - clip.start }))
       .filter((w) => w.text && w.end > 0 && !(settings.cut_fillers && isFiller(w.text)))
       .map((w) => ({ ...w, start: Math.max(0, w.start), end: Math.min(duration, w.end) }));
     return groupWords(timed, settings.captions.words_per_line);
-  }, [words, edits, settings.captions, settings.cut_fillers, clip.start, duration]);
+  }, [words, edits, settings.captions, settings.cut_fillers, clip.start, duration, captionLanguage, translated]);
   const fixes = useMemo(
     () => (words ?? [])
       .filter((w) => edits[w.start] !== undefined && edits[w.start] !== w.text)
@@ -116,6 +124,21 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
   useEffect(() => {
     api.getClipWords(clip.id).then(setWords).catch((err) => setWordsError(err.message));
   }, [clip.id]);
+
+  // Translated captions for the preview (translated once on the server, then cached).
+  useEffect(() => {
+    if (!captionLanguage || translated?.language === captionLanguage) return;
+    let live = true;
+    setTranslating(true);
+    api
+      .translateCaptions(clip.id, captionLanguage)
+      .then((w) => live && setTranslated({ language: captionLanguage, words: w }))
+      .catch((err) => live && setWordsError(err.message))
+      .finally(() => live && setTranslating(false));
+    return () => {
+      live = false;
+    };
+  }, [clip.id, captionLanguage, translated]);
 
   const update = (id: string, patch: Partial<TextOverlay>) =>
     setOverlays((all) => all.map((o) => (o.id === id ? { ...o, ...patch } : o)));
@@ -196,6 +219,7 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
         if (fresh) saved = { ...fresh, overlays: saved.overlays, title: saved.title };
         // The fixes are saved: they are now the words' current text.
         setWords((all) => all?.map((w) => (edits[w.start] !== undefined ? { ...w, text: edits[w.start] } : w)) ?? all);
+        setTranslated(null); // translations are redone from the fixed words
       }
       setClip(saved);
       onSaved(saved);
@@ -256,6 +280,11 @@ export function ClipEditor({ clip: initialClip, project, settings: initialSettin
         <div className="flex flex-col gap-6 md:flex-row">
           {/* Stage: the download's frame, with draggable texts on top of the video. */}
           <div className="shrink-0 space-y-2" style={{ width: stageWidth }}>
+            {translating && (
+              <p role="status" className="text-xs text-muted">
+                {t("Translating the captions…")}
+              </p>
+            )}
             <div
               ref={stage}
               data-testid="editor-stage"

@@ -5,7 +5,7 @@
  * (useDocumentHead updates title/description/canonical when navigating).
  */
 import { isRtl, LANGUAGES, msg, translate, type Lang } from "../i18n";
-import { FAQ, GUIDES } from "./content";
+import { AUDIENCES, COMPARISONS, FAQ, GUIDES, TOOLS } from "./content";
 import { CONTACT_EMAIL } from "./legal/types";
 import { localize, sitePaths } from "./locale";
 import { PLANS } from "./plans";
@@ -17,6 +17,10 @@ interface Meta {
   title: string;
   description: string;
 }
+
+const SOLUTION_TITLE = msg("Twapza for {name}: turn long videos into Shorts");
+
+const COMPARE_TITLE = msg("{name} alternative: Twapza vs {name} compared");
 
 const HOME_TITLE = msg("Twapza: turn long videos into viral Shorts with AI");
 
@@ -45,6 +49,14 @@ const PAGES: Record<string, Meta> = {
     title: msg("Guides for better Shorts"),
     description: msg("Short, practical guides on hooks, the best length for Shorts, captions and more, so your clips get watched."),
   },
+  "/tools": {
+    title: msg("Tools for making Shorts"),
+    description: msg("Everything Twapza does, one job at a time: pick what you want to make."),
+  },
+  "/compare": {
+    title: msg("Compare Twapza"),
+    description: msg("How Twapza compares with other AI clipping tools: what each one does best and who it suits."),
+  },
   "/coming-soon": {
     title: msg("Coming soon to Twapza"),
     description: msg("The features we are working on next, and how to reach us with ideas or questions."),
@@ -66,6 +78,25 @@ export function pageMeta(path: string, lang: Lang): Meta | null {
   if (guide) {
     const g = GUIDES.find((x) => x.slug === guide[1]);
     return g ? { title: `${tr(g.title)} | Twapza`, description: tr(g.summary) } : null;
+  }
+  const tool = /^\/tools\/([^/]+)$/.exec(path);
+  if (tool) {
+    const x = TOOLS.find((y) => y.slug === tool[1]);
+    return x ? { title: `${tr(x.heading)} | Twapza`, description: tr(x.intro) } : null;
+  }
+  const solution = /^\/solutions\/([^/]+)$/.exec(path);
+  if (solution) {
+    const a = AUDIENCES.find((y) => y.slug === solution[1]);
+    return a ? { title: `${translate(lang, SOLUTION_TITLE, { name: tr(a.title) })} | Twapza`, description: tr(a.text) } : null;
+  }
+  const compare = /^\/compare\/([^/]+)$/.exec(path);
+  if (compare) {
+    const c = COMPARISONS.find((x) => x.slug === compare[1]);
+    if (!c) return null;
+    return {
+      title: `${translate(lang, COMPARE_TITLE, { name: c.name })} | Twapza`,
+      description: translate(lang, "{name} and Twapza both turn long videos into Shorts with AI. Here is how they differ in pricing, languages and features, and who each one suits.", { name: c.name }),
+    };
   }
   const page = PAGES[path];
   if (!page) return null;
@@ -146,6 +177,38 @@ export function structuredData(path: string, lang: Lang): object[] {
           { "@type": "ListItem", position: 1, name: "Twapza", item: absoluteUrl("/", lang) },
           { "@type": "ListItem", position: 2, name: tr("Resources"), item: absoluteUrl("/resources", lang) },
           { "@type": "ListItem", position: 3, name: tr(g.title), item: url },
+        ],
+      },
+    ];
+  }
+  const crumbs = (parent: string, parentName: string, name: string) => [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Twapza", item: absoluteUrl("/", lang) },
+        { "@type": "ListItem", position: 2, name: parentName, item: absoluteUrl(parent, lang) },
+        { "@type": "ListItem", position: 3, name, item: url },
+      ],
+    },
+  ];
+  const toolMatch = /^\/tools\/([^/]+)$/.exec(path);
+  const tool = toolMatch && TOOLS.find((x) => x.slug === toolMatch[1]);
+  if (tool) return crumbs("/tools", tr("Tools"), tr(tool.name));
+  const solutionMatch = /^\/solutions\/([^/]+)$/.exec(path);
+  const audience = solutionMatch && AUDIENCES.find((x) => x.slug === solutionMatch[1]);
+  if (audience) return crumbs("/solutions", tr("Solutions"), tr(audience.title));
+  const compare = /^\/compare\/([^/]+)$/.exec(path);
+  const c = compare && COMPARISONS.find((x) => x.slug === compare[1]);
+  if (c) {
+    return [
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Twapza", item: absoluteUrl("/", lang) },
+          { "@type": "ListItem", position: 2, name: tr("Compare Twapza"), item: absoluteUrl("/compare", lang) },
+          { "@type": "ListItem", position: 3, name: translate(lang, "Twapza vs {name}", { name: c.name }), item: url },
         ],
       },
     ];

@@ -7,6 +7,7 @@ import { RequireAuth } from "./auth/RequireAuth";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { Logo } from "./components/Logo";
 import { useT } from "./i18n";
+import { CompareIndexPage, ComparisonPage } from "./marketing/ComparePage";
 import { FeaturesPage } from "./marketing/FeaturesPage";
 import { ComingSoonPage } from "./marketing/ComingSoonPage";
 import { HowItWorksPage } from "./marketing/HowItWorksPage";
@@ -16,7 +17,8 @@ import { PREFIXED_LANGS } from "./marketing/locale";
 import { MarketingLayout } from "./marketing/MarketingLayout";
 import { PricingPage } from "./marketing/PricingPage";
 import { GuidePage, ResourcesPage } from "./marketing/ResourcesPage";
-import { SolutionsPage } from "./marketing/SolutionsPage";
+import { SolutionPage, SolutionsPage } from "./marketing/SolutionsPage";
+import { ToolPage, ToolsIndexPage } from "./marketing/ToolsPage";
 import { AccountPage } from "./pages/AccountPage";
 import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage, VerifyEmailPage } from "./pages/AuthPages";
 import { ProjectPage } from "./pages/ProjectPage";
@@ -28,9 +30,14 @@ function websitePages(prefix: string) {
     ["/", <LandingPage />],
     ["/features", <FeaturesPage />],
     ["/solutions", <SolutionsPage />],
+    ["/solutions/:slug", <SolutionPage />],
+    ["/tools", <ToolsIndexPage />],
+    ["/tools/:slug", <ToolPage />],
     ["/pricing", <PricingPage />],
     ["/resources", <ResourcesPage />],
     ["/resources/:slug", <GuidePage />],
+    ["/compare", <CompareIndexPage />],
+    ["/compare/:slug", <ComparisonPage />],
     ["/how-it-works", <HowItWorksPage />],
     ["/coming-soon", <ComingSoonPage />],
     ["/privacy", <PrivacyPage />],

@@ -5,7 +5,7 @@
  * language picked in the menu.
  */
 import { LANGUAGES, type Lang } from "../i18n";
-import { GUIDES } from "./content";
+import { AUDIENCES, COMPARISONS, GUIDES, TOOLS } from "./content";
 
 /** Languages that get a URL prefix (English is the plain address). */
 export const PREFIXED_LANGS = LANGUAGES.map((l) => l.code).filter((c) => c !== "en") as Exclude<Lang, "en">[];
@@ -18,6 +18,8 @@ export const SITE_PATHS = [
   "/solutions",
   "/pricing",
   "/resources",
+  "/compare",
+  "/tools",
   "/coming-soon",
   "/privacy",
   "/terms",
@@ -25,12 +27,15 @@ export const SITE_PATHS = [
 
 /** Every pre-rendered page path (without language prefix), guides included. */
 export function sitePaths(): string[] {
-  return [...SITE_PATHS, ...GUIDES.map((g) => `/resources/${g.slug}`)];
+  return [...SITE_PATHS, ...GUIDES.map((g) => `/resources/${g.slug}`), ...COMPARISONS.map((c) => `/compare/${c.slug}`),
+    ...TOOLS.map((x) => `/tools/${x.slug}`),
+    ...AUDIENCES.map((a) => `/solutions/${a.slug}`),
+  ];
 }
 
 /** True for a path (without prefix) that exists in every language. */
 export function isLocalizedPath(path: string): boolean {
-  return (SITE_PATHS as readonly string[]).includes(path) || /^\/resources\/[^/]+$/.test(path);
+  return (SITE_PATHS as readonly string[]).includes(path) || /^\/(resources|compare|tools|solutions)\/[^/]+$/.test(path);
 }
 
 /** Splits "/nl/features" into { lang: "nl", path: "/features" } ("/features" -> English). */

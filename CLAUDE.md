@@ -173,6 +173,14 @@ twapza-redis  ──►  twapza-worker (RQ: ffmpeg, whisper, Claude)
   `/forgot-password`, `/reset-password?token=`; `pages/AuthPages.tsx`); the app (`AppLayout`, wrapped in
   `RequireAuth`) lives at `/app`, `/projects/:id` and `/account`. Copy is in `content.ts` (steps, features,
   audiences, FAQ, guides), display prices/features in `plans.ts` (keep in sync with `accounts/plans.py`).
+  `/tools[/:slug]` (`ToolsPage.tsx`, `content.TOOLS`: one search-friendly page per job Twapza does) and
+  `/solutions/:slug` (`SolutionsPage.SolutionPage`, `content.AUDIENCES`), both in the header dropdowns (`NavMenu`; full
+  menu from `xl`, ☰ below). Hero link box (`HeroLinkBox.tsx`, also on tool/use-case pages): a pasted YouTube link is kept
+  in localStorage (`lib/pendingLink.ts`, 3 days), the visitor goes to `/signup` (or `/app`), and `UploadPage` fills it
+  into `YoutubeImportForm(initialUrl)`; the rights checkbox is still required, so it never imports by itself.
+  `/compare[/:slug]` (`ComparePage.tsx`, data in `content.COMPARISONS`): honest comparisons with other clipping tools;
+  only state facts about them that their own site and several reviews agree on, say where they are stronger, no
+  competitor prices, and update `COMPARISONS_CHECKED` (shown as "checked in …") when re-checking.
   Don't claim features that don't exist. The old early-access list (`POST /api/waitlist`, `WaitlistEntry`)
   is no longer on the site; its data is kept (`python -m twapza.waitlist [--remove EMAIL]`).
 - **SEO** (`marketing/locale.ts`, `seo.ts`, `entry-server.tsx`, `scripts/prerender.mjs`): every website page has a URL per

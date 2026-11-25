@@ -2,6 +2,7 @@ import { Link } from "./links";
 
 import { useI18n } from "../i18n";
 import { AUDIENCES, FAQ, FEATURES, STEPS } from "./content";
+import { HeroLinkBox } from "./HeroLinkBox";
 import { PricingCards } from "./PricingCards";
 import { ProductMock } from "./ProductMock";
 import { Heading, IconBadge, PrimaryButton, SecondaryButton, Section } from "./ui";
@@ -25,9 +26,8 @@ export function LandingPage() {
             <p className="mx-auto mt-5 max-w-xl text-lg text-muted lg:mx-0">
               {t("Paste a YouTube link or upload a video. Twapza finds the best moments, adds animated captions and hooks, and gives you clips ready for Shorts, TikTok and Reels.")}
             </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
-              <PrimaryButton to="/signup">{t("Start for free")}</PrimaryButton>
-              <SecondaryButton to="/how-it-works">{t("See how it works")}</SecondaryButton>
+            <div className="mt-8">
+              <HeroLinkBox />
             </div>
             <p className="mt-4 text-sm text-faint">
               {t("No credit card needed · Captions in dozens of languages · Files deleted after 24 hours")}

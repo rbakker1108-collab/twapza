@@ -21,14 +21,18 @@ def init_sentry(component: str) -> bool:
     except ImportError:  # pragma: no cover - sentry-sdk is a normal dependency
         log.warning("TWAPZA_SENTRY_DSN is set but sentry-sdk isn't installed")
         return False
-    sentry_sdk.init(
-        dsn=dsn,
-        environment=get_settings().sentry_environment,
-        server_name=f"twapza-{component}",
-        send_default_pii=False,
-        traces_sample_rate=0.0,
-        max_request_body_size="never",
-    )
-    sentry_sdk.set_tag("component", component)
+    try:
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=get_settings().sentry_environment,
+            server_name=f"twapza-{component}",
+            send_default_pii=False,
+            traces_sample_rate=0.0,
+            max_request_body_size="never",
+        )
+        sentry_sdk.set_tag("component", component)
+    except Exception:  # noqa: BLE001 - error reporting must never stop Twapza from starting
+        log.exception("could not switch on error reporting (TWAPZA_SENTRY_DSN); running without it")
+        return False
     log.info("error reporting switched on for %s", component)
     return True

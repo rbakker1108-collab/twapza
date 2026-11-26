@@ -178,6 +178,21 @@ def test_error_reporting_is_off_without_a_dsn_and_never_sends_personal_data(monk
     get_settings.cache_clear()
 
 
+def test_a_broken_error_reporting_setup_never_stops_startup(monkeypatch):
+    import sentry_sdk
+
+    from twapza.monitoring import init_sentry
+
+    def refuse(**kw):
+        raise TypeError("Unknown option 'send_default_pii'")  # what sentry-sdk 3.0 did
+
+    monkeypatch.setattr(sentry_sdk, "init", refuse)
+    monkeypatch.setenv("TWAPZA_SENTRY_DSN", "https://key@o1.ingest.de.sentry.io/1")
+    get_settings.cache_clear()
+    assert init_sentry("api") is False
+    get_settings.cache_clear()
+
+
 def test_expected_job_failures_are_warnings_not_errors(caplog):
     import logging
 

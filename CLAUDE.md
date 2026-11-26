@@ -333,6 +333,10 @@ and register it in `transcription/get_transcriber()` (selected by `TWAPZA_TRANSC
 - Cached singletons (`get_settings`, `get_engine`, `get_storage`, `get_redis`) are
   `lru_cache`d; tests reset them in `tests/conftest.py`.
 - Schema changes go through `SCHEMA_VERSION` + `MIGRATIONS` in `db/session.py` (see above).
+- **Pinned dependencies**: the backend image installs with `pip install -c requirements.lock` (exact versions for
+  Python 3.12/Linux, made by `make lock` with uv); only yt-dlp/yt-dlp-ejs stay unpinned so rebuilds pick up YouTube
+  fixes. pyproject keeps the ranges. To upgrade: `make lock`, run all tests, commit the lock. (An unpinned
+  sentry-sdk 3.0 once took the API down at startup.) The frontend is pinned by `package-lock.json` + `npm ci`.
 - Frontend: function components + hooks, Tailwind utility classes, no global state
   library. Keep API types in `api/client.ts` in sync with `api/schemas.py`.
 - **Theme** (dark, black + orange): use the named colours from `src/index.css` `@theme`

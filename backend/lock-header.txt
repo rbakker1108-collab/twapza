@@ -1,0 +1,8 @@
+# Exact versions of every Python package in the Docker image (Python 3.12, Linux), so a rebuild
+# installs what the tests ran against instead of whatever was released that day.
+# Used as pip constraints: pip install -c requirements.lock ".[dev,whisper,scenes]"
+#
+# yt-dlp and yt-dlp-ejs are deliberately NOT pinned: YouTube changes often, and every rebuild
+# should pick up the newest yt-dlp.
+#
+# To update: make lock (or the uv command in the Makefile), run the tests, commit.

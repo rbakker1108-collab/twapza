@@ -1,4 +1,4 @@
-.PHONY: up up-gpu down logs test test-backend test-frontend test-docker dev-api dev-worker dev-web
+.PHONY: up up-gpu down logs test test-backend test-frontend test-docker dev-api dev-worker dev-web lock
 
 up:            ## build and start everything (http://localhost:8080)
 	docker compose up --build -d
@@ -32,3 +32,8 @@ dev-worker:
 
 dev-web:
 	cd frontend && npm run dev
+
+lock:          ## re-pin the backend's Python packages (then run make test and commit backend/requirements.lock)
+	cd backend && uv pip compile pyproject.toml --extra dev --extra whisper --extra scenes \
+		--python-version 3.12 --python-platform x86_64-manylinux_2_28 --no-header --annotation-style line \
+		| grep -v -E '^yt-dlp(-ejs)?==' | cat lock-header.txt - > requirements.lock

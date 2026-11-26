@@ -10,9 +10,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml ./
+COPY pyproject.toml requirements.lock ./
 COPY twapza ./twapza
-RUN pip install ".[dev,whisper,scenes]"
+# Exact, tested versions (requirements.lock); only yt-dlp is left free to update on every rebuild.
+RUN pip install -c requirements.lock ".[dev,whisper,scenes]"
 
 # Optional NVIDIA GPU support for faster-whisper (see docker-compose.gpu.yml).
 ARG WHISPER_GPU=0
